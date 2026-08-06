@@ -6,16 +6,14 @@ import com.fooddelivery.advertisement.bidding.matcher.CampaignMatcher;
 import com.fooddelivery.common.constants.EventType;
 import com.fooddelivery.common.constants.KafkaConstants;
 import com.fooddelivery.advertisement.bidding.constants.BiddingConstants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 public class CampaignEventConsumer {
-    private static final Logger log = LoggerFactory.getLogger(CampaignEventConsumer.class);
-    
-    private final CampaignMatcher matcher;
+private final CampaignMatcher matcher;
     private final ObjectMapper objectMapper;
     
     public CampaignEventConsumer(CampaignMatcher matcher, ObjectMapper objectMapper) {

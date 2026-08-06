@@ -8,9 +8,11 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.concurrent.TimeoutException;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/api/v1/bidding")
+@Slf4j
 public class BiddingController {
 
     private final DisruptorService disruptorService;

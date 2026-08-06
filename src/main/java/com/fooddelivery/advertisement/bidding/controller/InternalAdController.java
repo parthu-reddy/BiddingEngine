@@ -12,9 +12,11 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/api/v1/ads")
+@Slf4j
 public class InternalAdController {
 
     private final CampaignMatcher matcher;
