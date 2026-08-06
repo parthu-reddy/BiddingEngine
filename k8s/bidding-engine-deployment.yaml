@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bidding-engine
+  namespace: food-delivery
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: bidding-engine
+  template:
+    metadata:
+      labels:
+        app: bidding-engine
+    spec:
+      containers:
+        - name: bidding-engine
+          image: food-delivery/bidding-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8091
+          envFrom:
+            - configMapRef:
+                name: advertisement-config
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
