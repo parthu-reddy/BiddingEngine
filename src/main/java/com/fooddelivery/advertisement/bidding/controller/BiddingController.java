@@ -8,16 +8,15 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.concurrent.TimeoutException;
-import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/api/v1/bidding")
-@Slf4j
 public class BiddingController {
-
+    @java.lang.SuppressWarnings("all")
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BiddingController.class);
     private final DisruptorService disruptorService;
     private final OpenRtbRequestParser openRtbParser;
-    
+
     public BiddingController(DisruptorService disruptorService, OpenRtbRequestParser openRtbParser) {
         this.disruptorService = disruptorService;
         this.openRtbParser = openRtbParser;
@@ -43,21 +42,16 @@ public class BiddingController {
             return Mono.just(ResponseEntity.noContent().build());
         }
     }
-    
+
     private Mono<ResponseEntity<BidResponse>> processRequest(BidRequest request) {
         if (request.imp == null || request.imp.isEmpty()) {
             return Mono.just(ResponseEntity.noContent().build());
         }
-        
         long tmax = request.tmax != null ? request.tmax : 100L;
-        
         return Mono.<ResponseEntity<BidResponse>>create(sink -> {
             disruptorService.publish(request, sink);
-        })
-        .timeout(Duration.ofMillis(tmax))
-        .onErrorResume(TimeoutException.class, e -> {
+        }).timeout(Duration.ofMillis(tmax)).onErrorResume(TimeoutException.class, e -> {
             return Mono.just(ResponseEntity.noContent().build());
         });
     }
 }
-
