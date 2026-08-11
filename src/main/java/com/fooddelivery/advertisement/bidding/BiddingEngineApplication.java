@@ -3,7 +3,7 @@ package com.fooddelivery.advertisement.bidding;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.fooddelivery.advertisement.bidding"})
 public class BiddingEngineApplication {
     public static void main(String[] args) {
         SpringApplication.run(BiddingEngineApplication.class, args);
