@@ -54,12 +54,13 @@ public class CampaignEventConsumer {
                 }
             }
         } catch (Exception e) {
-            log.error("Failed to process campaign event", e);
+            log.error("Failed to process campaign event, propagating for retry", e);
+            throw new RuntimeException("Failed to process campaign event", e);
         }
     }
 
     @DltHandler
     public void handleDlt(Object message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
-        System.err.println("Message failed 5 times and sent to DLT: " + topic + " - " + message);
+        log.error("Campaign event failed all retries and sent to DLT: {} - {}", topic, message);
     }
 }
