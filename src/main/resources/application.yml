@@ -3,6 +3,8 @@ spring:
     import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
   application:
     name: bidding-engine
+outbox:
+  enabled: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}
