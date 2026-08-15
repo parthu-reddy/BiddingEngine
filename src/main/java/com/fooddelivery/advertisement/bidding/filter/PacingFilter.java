@@ -12,8 +12,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Component
+@lombok.extern.slf4j.Slf4j
 public class PacingFilter implements TargetingFilter {
-    private static final Logger log = LoggerFactory.getLogger(PacingFilter.class);
+
     private final CacheProvider cache;
     
     public PacingFilter(CacheProvider cache) { this.cache = cache; }

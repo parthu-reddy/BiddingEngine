@@ -23,9 +23,10 @@ import java.util.Base64;
 
 @RestController
 @RequestMapping("/api/v1/ads")
+@lombok.extern.slf4j.Slf4j
 public class InternalAdController {
     @java.lang.SuppressWarnings("all")
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(InternalAdController.class);
+
     private final CampaignMatcher matcher;
     private final List<TargetingFilter> filterChain;
     private final BidPricer bidPricer;

@@ -1,4 +1,9 @@
 spring:
+  kafka:
+    listener:
+      observation-enabled: true
+    template:
+      observation-enabled: true
   config:
     import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
   application:
@@ -21,7 +26,15 @@ eureka:
     preferIpAddress: true
 
 management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+

@@ -11,9 +11,10 @@ import java.util.concurrent.TimeoutException;
 
 @RestController
 @RequestMapping("/api/v1/bidding")
+@lombok.extern.slf4j.Slf4j
 public class BiddingController {
     @java.lang.SuppressWarnings("all")
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BiddingController.class);
+
     private final DisruptorService disruptorService;
     private final OpenRtbRequestParser openRtbParser;
 

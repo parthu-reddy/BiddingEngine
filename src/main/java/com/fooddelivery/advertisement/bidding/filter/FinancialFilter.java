@@ -11,9 +11,8 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 
 @Component
+@lombok.extern.slf4j.Slf4j
 public class FinancialFilter implements TargetingFilter {
-
-    private static final Logger log = LoggerFactory.getLogger(FinancialFilter.class);
 
     private final CacheProvider cache;
 

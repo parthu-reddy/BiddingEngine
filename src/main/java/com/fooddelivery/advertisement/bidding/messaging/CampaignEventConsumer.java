@@ -16,9 +16,10 @@ import org.springframework.kafka.retrytopic.DltStrategy;
 import org.springframework.stereotype.Service;
 
 @Service
+@lombok.extern.slf4j.Slf4j
 public class CampaignEventConsumer {
     @java.lang.SuppressWarnings("all")
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(CampaignEventConsumer.class);
+
     private final CampaignMatcher matcher;
     private final ObjectMapper objectMapper;
 

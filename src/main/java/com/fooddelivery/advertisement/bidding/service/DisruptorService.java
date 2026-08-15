@@ -26,10 +26,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@lombok.extern.slf4j.Slf4j
 public class DisruptorService {
     @java.lang.SuppressWarnings("all")
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DisruptorService.class);
-
 
     public static class BiddingEvent {
         public BidRequest request;
