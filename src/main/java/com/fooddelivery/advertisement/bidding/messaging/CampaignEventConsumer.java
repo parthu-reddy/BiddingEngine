@@ -15,6 +15,8 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.kafka.retrytopic.DltStrategy;
 import org.springframework.stereotype.Service;
 
+import java.util.UUID;
+
 @Service
 @lombok.extern.slf4j.Slf4j
 public class CampaignEventConsumer {
@@ -22,15 +24,33 @@ public class CampaignEventConsumer {
 
     private final CampaignMatcher matcher;
     private final ObjectMapper objectMapper;
+    private final RedisIdempotencyService redisIdempotencyService;
 
-    public CampaignEventConsumer(CampaignMatcher matcher, ObjectMapper objectMapper) {
+    public CampaignEventConsumer(CampaignMatcher matcher, ObjectMapper objectMapper, RedisIdempotencyService redisIdempotencyService) {
         this.matcher = matcher;
         this.objectMapper = objectMapper;
+        this.redisIdempotencyService = redisIdempotencyService;
     }
 
     @RetryableTopic(attempts = "5", backoff = @Backoff(delay = 1000, multiplier = 2.0), autoCreateTopics = "true", dltStrategy = DltStrategy.FAIL_ON_ERROR)
     @KafkaListener(topics = KafkaConstants.TOPIC_AD_EVENTS, groupId = KafkaConstants.GROUP_AD_SERVICE)
-    public void consumeCampaignEvent(String message) {
+    public void consumeCampaignEvent(String message, @org.springframework.messaging.handler.annotation.Headers java.util.Map<String, Object> headers) {
+        
+        String extractedEventId = com.fooddelivery.common.util.KafkaHeaderUtils.extractHeaderValue(headers, "eventId");
+        final String resolvedEventId;
+        if (extractedEventId == null) {
+            resolvedEventId = UUID.nameUUIDFromBytes(message.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        } else {
+            resolvedEventId = extractedEventId;
+        }
+
+        String idempotencyKeyStr = "processed_event:bidding:" + resolvedEventId;
+
+        if (redisIdempotencyService.isDuplicate(idempotencyKeyStr)) {
+            log.info("Duplicate campaign event ignored: {}", idempotencyKeyStr);
+            return;
+        }
+
         try {
             JsonNode root = objectMapper.readTree(message);
             if (root.has("eventType") && root.has("payload")) {
