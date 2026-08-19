@@ -17,7 +17,7 @@ import org.springframework.kafka.test.context.EmbeddedKafka;
 
 @ActiveProfiles("contract-test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, classes = com.fooddelivery.advertisement.bidding.BiddingEngineApplication.class)
-@AutoConfigureStubRunner(ids = "com.fooddelivery:food-delivery-backend:+:stubs", stubsMode = StubRunnerProperties.StubsMode.REMOTE, repositoryRoot = "git://file:///tmp/FoodDelivery/FoodDeliveryContracts/.git")
+@AutoConfigureStubRunner(ids = "com.fooddelivery:food-delivery-backend:+:stubs", stubsMode = StubRunnerProperties.StubsMode.REMOTE, repositoryRoot = "git://file:///Users/parthureddy/Documents/Food%20Delivery.nosync/FoodDeliveryContracts/.git")
 @EmbeddedKafka(partitions = 1)
 public class CampaignEventConsumerTest {
 

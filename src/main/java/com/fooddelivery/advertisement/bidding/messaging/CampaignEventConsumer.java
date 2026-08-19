@@ -53,13 +53,13 @@ public class CampaignEventConsumer {
 
         try {
             JsonNode root = objectMapper.readTree(message);
-            if (root.has("eventType") && root.has("payload")) {
-                String eventTypeStr = root.get("eventType").asText();
-                JsonNode payload = root.get("payload");
-                // Sometimes outbox payload is stringified JSON
-                if (payload.isTextual()) {
-                    payload = objectMapper.readTree(payload.asText());
-                }
+            // CampaignService publishes the saved Campaign FLAT, with the event type carried only
+            // as a Kafka header. The previous guard required an {eventType, payload} envelope and
+            // was therefore never true, so campaigns were never indexed into or removed from the
+            // matcher -- paused and deleted campaigns kept serving.
+            String eventTypeStr = com.fooddelivery.common.util.EventPayloadUtils.resolveEventType(root, headers);
+            JsonNode payload = com.fooddelivery.common.util.EventPayloadUtils.unwrapPayload(root);
+            if (eventTypeStr != null && payload != null) {
                 String campaignId = payload.has("id") ? payload.get("id").asText() : null;
                 if (campaignId == null) {
                     return;
