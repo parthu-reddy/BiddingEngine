@@ -2,12 +2,11 @@ package com.fooddelivery.advertisement.bidding.controller;
 
 import com.fooddelivery.advertisement.bidding.model.BidRequest;
 import com.fooddelivery.advertisement.bidding.model.BidResponse;
-import com.fooddelivery.advertisement.bidding.service.DisruptorService;
+import com.fooddelivery.advertisement.bidding.service.BiddingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
-import java.time.Duration;
-import java.util.concurrent.TimeoutException;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/bidding")
@@ -15,12 +14,14 @@ import java.util.concurrent.TimeoutException;
 public class BiddingController {
     @java.lang.SuppressWarnings("all")
 
-    private final DisruptorService disruptorService;
+    private final BiddingService biddingService;
     private final OpenRtbRequestParser openRtbParser;
+    private final com.fooddelivery.common.service.RateLimitingService rateLimitingService;
 
-    public BiddingController(DisruptorService disruptorService, OpenRtbRequestParser openRtbParser) {
-        this.disruptorService = disruptorService;
+    public BiddingController(BiddingService biddingService, OpenRtbRequestParser openRtbParser, com.fooddelivery.common.service.RateLimitingService rateLimitingService) {
+        this.biddingService = biddingService;
         this.openRtbParser = openRtbParser;
+        this.rateLimitingService = rateLimitingService;
     }
 
     @PostMapping(value = "/rtb", consumes = "application/x-protobuf")
@@ -45,14 +46,21 @@ public class BiddingController {
     }
 
     private Mono<ResponseEntity<BidResponse>> processRequest(BidRequest request) {
+        try {
+            rateLimitingService.enforceRateLimit("exchange", "rtb");
+        } catch (RuntimeException e) {
+            return Mono.just(ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).build());
+        }
+        
         if (request.imp == null || request.imp.isEmpty()) {
             return Mono.just(ResponseEntity.noContent().build());
         }
-        long tmax = request.tmax != null ? request.tmax : 100L;
-        return Mono.<ResponseEntity<BidResponse>>create(sink -> {
-            disruptorService.publish(request, sink);
-        }).timeout(Duration.ofMillis(tmax)).onErrorResume(TimeoutException.class, e -> {
+        
+        Optional<BidResponse> responseOpt = biddingService.processBidSync(request);
+        if (responseOpt.isPresent()) {
+            return Mono.just(ResponseEntity.ok(responseOpt.get()));
+        } else {
             return Mono.just(ResponseEntity.noContent().build());
-        });
+        }
     }
 }

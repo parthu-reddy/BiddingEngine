@@ -1,9 +1,7 @@
 package com.fooddelivery.advertisement.bidding.pricing;
 
 public enum PricingStrategyType {
-    FIRST_PRICE_SHADED_STRATEGY("FirstPriceShadedStrategy"),
-    SECOND_PRICE_STRATEGY("SecondPriceStrategy"),
-    FIXED_PRICING_STRATEGY("FixedPricingStrategy");
+    FIRST_PRICE_SHADED_STRATEGY("FirstPriceShadedStrategy");
 
     private final String beanName;
 

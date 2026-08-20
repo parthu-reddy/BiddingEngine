@@ -4,6 +4,7 @@ import org.roaringbitmap.RoaringBitmap;
 import org.springframework.stereotype.Component;
 import com.fooddelivery.advertisement.bidding.model.CampaignIndexData;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,118 +15,133 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 @Component
 public class CampaignMatcher {
 
+    private final Map<String, Integer> campaignToIdMap = new HashMap<>();
+    private final Map<Integer, String> idToCampaignMap = new HashMap<>();
+    private final Map<String, CampaignIndexData> campaignDataMap = new HashMap<>();
+    private final Map<String, RoaringBitmap> geoIndex = new HashMap<>();
     private final AtomicInteger sequenceGenerator = new AtomicInteger(1);
+    private final java.util.Queue<Integer> freeList = new java.util.concurrent.ConcurrentLinkedQueue<>();
     
-    // Immutable snapshot class for RCU
-    private static class IndexSnapshot {
-        final Map<String, Integer> campaignToIdMap;
-        final Map<Integer, String> idToCampaignMap;
-        final Map<String, String> campaignToAdvertiserMap;
-        final Map<String, RoaringBitmap> geoIndex;
+    private final java.util.concurrent.locks.ReadWriteLock lock = new java.util.concurrent.locks.ReentrantReadWriteLock();
 
-        IndexSnapshot() {
-            this.campaignToIdMap = Map.of();
-            this.idToCampaignMap = Map.of();
-            this.campaignToAdvertiserMap = Map.of();
-            this.geoIndex = Map.of();
-        }
-
-        IndexSnapshot(Map<String, Integer> campaignToIdMap, 
-                      Map<Integer, String> idToCampaignMap, 
-                      Map<String, String> campaignToAdvertiserMap, 
-                      Map<String, RoaringBitmap> geoIndex) {
-            this.campaignToIdMap = Map.copyOf(campaignToIdMap);
-            this.idToCampaignMap = Map.copyOf(idToCampaignMap);
-            this.campaignToAdvertiserMap = Map.copyOf(campaignToAdvertiserMap);
-            this.geoIndex = Map.copyOf(geoIndex);
-        }
-    }
-
-    // Volatile reference to the current immutable snapshot
-    private volatile IndexSnapshot currentSnapshot = new IndexSnapshot();
-
-    // Single write lock to serialize updates, readers are NEVER blocked
-    private final Object writeLock = new Object();
-
-    public void indexCampaign(String campaignId, String geo, String advertiserId) {
-        synchronized(writeLock) {
-            IndexSnapshot oldSnapshot = currentSnapshot;
-            
-            // Create mutable copies for the update
-            Map<String, Integer> newCampaignToIdMap = new ConcurrentHashMap<>(oldSnapshot.campaignToIdMap);
-            Map<Integer, String> newIdToCampaignMap = new ConcurrentHashMap<>(oldSnapshot.idToCampaignMap);
-            Map<String, String> newCampaignToAdvertiserMap = new ConcurrentHashMap<>(oldSnapshot.campaignToAdvertiserMap);
-            Map<String, RoaringBitmap> newGeoIndex = new ConcurrentHashMap<>();
-            
-            // Deep copy bitmaps
-            oldSnapshot.geoIndex.forEach((k, v) -> newGeoIndex.put(k, v.clone()));
-
-            int internalId = newCampaignToIdMap.computeIfAbsent(campaignId, k -> {
-                int newId = sequenceGenerator.getAndIncrement();
-                newIdToCampaignMap.put(newId, k);
+    public void indexCampaign(String campaignId, List<String> geos, String advertiserId, java.math.BigDecimal maxBid, double pacingMultiplier, boolean budgetExhausted, com.fooddelivery.common.dto.targeting.TargetingSummary targeting, String creativeFormat, String creativeAssetUrl, String creativeVastXml) {
+        lock.writeLock().lock();
+        try {
+            int internalId = campaignToIdMap.computeIfAbsent(campaignId, k -> {
+                Integer freeId = freeList.poll();
+                int newId = (freeId != null) ? freeId : sequenceGenerator.getAndIncrement();
+                idToCampaignMap.put(newId, k);
                 return newId;
             });
             
-            newGeoIndex.computeIfAbsent(geo, k -> new RoaringBitmap()).add(internalId);
-            
-            if (advertiserId != null) {
-                newCampaignToAdvertiserMap.put(campaignId, advertiserId);
+            // Remove from old geos if they exist (clean up)
+            for (RoaringBitmap bm : geoIndex.values()) {
+                bm.remove(internalId);
             }
             
-            // Atomic volatile write of the new snapshot
-            currentSnapshot = new IndexSnapshot(newCampaignToIdMap, newIdToCampaignMap, newCampaignToAdvertiserMap, newGeoIndex);
+            if (geos != null && !geos.isEmpty()) {
+                for (String geo : geos) {
+                    geoIndex.computeIfAbsent(geo, k -> new RoaringBitmap()).add(internalId);
+                }
+            } else {
+                geoIndex.computeIfAbsent("DEFAULT_GEO", k -> new RoaringBitmap()).add(internalId);
+            }
+            
+            CampaignIndexData oldData = campaignDataMap.get(campaignId);
+            String effAdvertiserId = advertiserId != null ? advertiserId : (oldData != null ? oldData.advertiserId : null);
+            java.math.BigDecimal effMaxBid = maxBid != null ? maxBid : (oldData != null ? oldData.maxBid : null);
+            double effPacing = pacingMultiplier >= 0 ? pacingMultiplier : (oldData != null ? oldData.pacingMultiplier : 1.0);
+            com.fooddelivery.common.dto.targeting.TargetingSummary effTargeting = targeting != null ? targeting : (oldData != null ? oldData.targeting : null);
+            String effCreativeFormat = creativeFormat != null ? creativeFormat : (oldData != null ? oldData.creativeFormat : null);
+            String effCreativeAssetUrl = creativeAssetUrl != null ? creativeAssetUrl : (oldData != null ? oldData.creativeAssetUrl : null);
+            String effCreativeVastXml = creativeVastXml != null ? creativeVastXml : (oldData != null ? oldData.creativeVastXml : null);
+            
+            campaignDataMap.put(campaignId, new CampaignIndexData(campaignId, effAdvertiserId, effMaxBid, effPacing, budgetExhausted, effTargeting, effCreativeFormat, effCreativeAssetUrl, effCreativeVastXml));
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    public void updateBudgetExhausted(String campaignId, boolean exhausted) {
+        lock.writeLock().lock();
+        try {
+            CampaignIndexData oldData = campaignDataMap.get(campaignId);
+            if (oldData != null) {
+                campaignDataMap.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, oldData.pacingMultiplier, exhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    public void updatePacing(String campaignId, double pacing, boolean budgetExhausted) {
+        lock.writeLock().lock();
+        try {
+            CampaignIndexData oldData = campaignDataMap.get(campaignId);
+            if (oldData != null) {
+                campaignDataMap.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, pacing, budgetExhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    public boolean getBudgetExhausted(String campaignId) {
+        lock.readLock().lock();
+        try {
+            CampaignIndexData data = campaignDataMap.get(campaignId);
+            return data != null && data.budgetExhausted;
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
-    public void indexCampaign(String campaignId, String geo) {
-        indexCampaign(campaignId, geo, null);
-    }
-
     public void removeCampaign(String campaignId) {
-        synchronized(writeLock) {
-            IndexSnapshot oldSnapshot = currentSnapshot;
-            
-            if (!oldSnapshot.campaignToIdMap.containsKey(campaignId)) return;
-
-            Map<String, Integer> newCampaignToIdMap = new ConcurrentHashMap<>(oldSnapshot.campaignToIdMap);
-            Map<Integer, String> newIdToCampaignMap = new ConcurrentHashMap<>(oldSnapshot.idToCampaignMap);
-            Map<String, String> newCampaignToAdvertiserMap = new ConcurrentHashMap<>(oldSnapshot.campaignToAdvertiserMap);
-            Map<String, RoaringBitmap> newGeoIndex = new ConcurrentHashMap<>();
-            
-            oldSnapshot.geoIndex.forEach((k, v) -> newGeoIndex.put(k, v.clone()));
-
-            Integer internalId = newCampaignToIdMap.remove(campaignId);
+        lock.writeLock().lock();
+        try {
+            Integer internalId = campaignToIdMap.remove(campaignId);
             if (internalId != null) {
-                newIdToCampaignMap.remove(internalId);
-                for (RoaringBitmap bm : newGeoIndex.values()) {
+                idToCampaignMap.remove(internalId);
+                for (RoaringBitmap bm : geoIndex.values()) {
                     bm.remove(internalId);
                 }
+                freeList.offer(internalId);
             }
-            newCampaignToAdvertiserMap.remove(campaignId);
-            
-            currentSnapshot = new IndexSnapshot(newCampaignToIdMap, newIdToCampaignMap, newCampaignToAdvertiserMap, newGeoIndex);
+            campaignDataMap.remove(campaignId);
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
     public String getAdvertiserId(String campaignId) {
-        return currentSnapshot.campaignToAdvertiserMap.get(campaignId); // Lock-free
+        lock.readLock().lock();
+        try {
+            CampaignIndexData data = campaignDataMap.get(campaignId);
+            return data != null ? data.advertiserId : null;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public List<CampaignIndexData> match(String geo) {
-        // Lock-free read!
-        IndexSnapshot snapshot = currentSnapshot;
-        RoaringBitmap matches = snapshot.geoIndex.get(geo);
-        
         List<CampaignIndexData> results = new ArrayList<>();
-        if (matches == null) return results;
+        lock.readLock().lock();
+        try {
+            RoaringBitmap matches = geoIndex.get(geo);
+            if (matches == null) return results;
 
-        org.roaringbitmap.IntIterator it = matches.getIntIterator();
-        while (it.hasNext()) {
-            String campaignId = snapshot.idToCampaignMap.get(it.next());
-            if (campaignId != null) {
-                String advertiserId = snapshot.campaignToAdvertiserMap.get(campaignId);
-                results.add(new CampaignIndexData(campaignId, advertiserId));
+            org.roaringbitmap.IntIterator it = matches.getIntIterator();
+            while (it.hasNext()) {
+                String campaignId = idToCampaignMap.get(it.next());
+                if (campaignId != null) {
+                    CampaignIndexData data = campaignDataMap.get(campaignId);
+                    if (data != null) {
+                        results.add(data);
+                    }
+                }
             }
+        } finally {
+            lock.readLock().unlock();
         }
         return results;
     }

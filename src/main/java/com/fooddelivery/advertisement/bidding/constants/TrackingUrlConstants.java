@@ -1,9 +1,18 @@
 package com.fooddelivery.advertisement.bidding.constants;
 
-public final class TrackingUrlConstants {
-    private TrackingUrlConstants() {}
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import com.fooddelivery.common.constants.AdMacroConstants;
 
-    public static final String IMPRESSION_TRACKING_URL_TEMPLATE = "http://event-tracking-service/api/v1/tracking/impression?campaignId=%s&advertiserId=%s&wp=" + com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE;
-    public static final String CLICK_TRACKING_URL_TEMPLATE = "http://event-tracking-service/api/v1/tracking/click?campaignId=%s&advertiserId=%s";
-    public static final String CDN_SPONSORED_IMAGE_TEMPLATE = "http://cdn.com/sponsored-%s.png";
+@Component
+public class TrackingUrlConstants {
+
+    @Value("${bidding.tracking.impression.url:https://event-tracking-service/api/v1/tracking/impression?campaignId=%s&advertiserId=%s&wp=%s}")
+    public String impressionTrackingUrlTemplate;
+
+    @Value("${bidding.tracking.click.url:https://event-tracking-service/api/v1/tracking/click?campaignId=%s&advertiserId=%s}")
+    public String clickTrackingUrlTemplate;
+
+    @Value("${bidding.tracking.cdn.url:https://cdn.example.com/sponsored-%s.png}")
+    public String cdnSponsoredImageTemplate;
 }

@@ -10,7 +10,7 @@ class FirstPriceShadedStrategy implements PricingStrategy {
     public BigDecimal calculateBid(String campaignId, BigDecimal maxBid, double pacingS) {
         // Applies Bid Shading logic
         // Reduces max bid based on pacing and predicted market clearing price
-        BigDecimal shaded = maxBid.multiply(new BigDecimal(pacingS)).multiply(BiddingConstants.SHADING_FACTOR);
+        BigDecimal shaded = maxBid.multiply(BigDecimal.valueOf(pacingS)).multiply(BiddingConstants.SHADING_FACTOR);
         return shaded.setScale(4, RoundingMode.HALF_UP);
     }
 }

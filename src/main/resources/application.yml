@@ -1,40 +1,17 @@
 spring:
-  kafka:
-    listener:
-      observation-enabled: true
-    template:
-      observation-enabled: true
-  config:
-    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
-  application:
-    name: bidding-engine
-outbox:
-  enabled: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-
+  config:
+    import: optional:classpath:config/platform-defaults.yml,optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  application:
+    name: bidding-engine
+outbox:
+  enabled: false
 server:
   port: 8102
-
 eureka:
   client:
     serviceUrl:
       defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
-  instance:
-    preferIpAddress: true
-
-management:
-  tracing:
-    enabled: true
-    sampling:
-      probability: 1.0
-  otlp:
-    tracing:
-      endpoint: http://localhost:4318/v1/traces
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus
-

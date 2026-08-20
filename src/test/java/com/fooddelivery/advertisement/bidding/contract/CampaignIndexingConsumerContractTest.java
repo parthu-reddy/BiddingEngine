@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -37,12 +39,15 @@ import static org.mockito.Mockito.verify;
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration,org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration")
 @ActiveProfiles("contract-test")
-@AutoConfigureStubRunner(ids = "com.fooddelivery:campaign-service:+:stubs",
-        stubsMode = StubRunnerProperties.StubsMode.LOCAL)
-@EmbeddedKafka(partitions = 1, topics = {"ad-events"})
+@AutoConfigureStubRunner(ids = {
+        "com.fooddelivery:campaign-service:+:stubs",
+        "com.fooddelivery:budget-pacing-service:+:stubs",
+        "com.fooddelivery:wallet-service:+:stubs"
+}, stubsMode = StubRunnerProperties.StubsMode.LOCAL)
+@EmbeddedKafka(partitions = 1, topics = {"ad-events", "campaign-alerts"})
 class CampaignIndexingConsumerContractTest {
 
-    @org.springframework.boot.SpringBootConfiguration
+    @org.springframework.boot.test.context.TestConfiguration
     @org.springframework.boot.autoconfigure.EnableAutoConfiguration
     @Import(CampaignEventConsumer.class)
     static class TestConfig {
@@ -58,14 +63,53 @@ class CampaignIndexingConsumerContractTest {
     @MockBean
     private RedisIdempotencyService redisIdempotencyService;
 
+    /* The full application context is loaded here; these two reach outside the JVM. */
+    @MockBean
+    private org.springframework.data.redis.core.ReactiveStringRedisTemplate reactiveStringRedisTemplate;
+
+    @MockBean
+    private com.fooddelivery.advertisement.bidding.client.CampaignServiceClient campaignServiceClient;
+
+    /* @ConditionalOnProperty("spring.redis.enabled") keeps this out of the context; the
+       controllers require it. */
+    @MockBean
+    private com.fooddelivery.common.service.RateLimitingService rateLimitingService;
+
     @Autowired
     private StubTrigger stubTrigger;
 
     @Test
-    void indexesTheCampaignFromTheProducerStub() {
+    void indexesTheCampaignOnCreated() {
         stubTrigger.trigger("ad_events");
-
         await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                verify(matcher).indexCampaign(anyString(), any(), anyString()));
+                verify(matcher).indexCampaign(anyString(), any(), anyString(), any(), anyDouble(), anyBoolean(), any(), any(), any(), any()));
+    }
+
+    @Test
+    void removesTheCampaignOnPaused() {
+        stubTrigger.trigger("ad_events_paused");
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
+                verify(matcher).removeCampaign(anyString()));
+    }
+
+    @Test
+    void removesTheCampaignOnBudgetExhausted() {
+        stubTrigger.trigger("ad_events_exhausted");
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
+                verify(matcher).removeCampaign(anyString()));
+    }
+
+    @Test
+    void indexesTheCampaignOnPacingUpdated() {
+        stubTrigger.trigger("ad_events_pacing");
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
+                verify(matcher).indexCampaign(anyString(), any(), anyString(), any(), anyDouble(), anyBoolean(), any(), any(), any(), any()));
+    }
+
+    @Test
+    void removesTheCampaignOnBudgetAlert() {
+        stubTrigger.trigger("ad_budget_alert");
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
+                verify(matcher).removeCampaign(anyString()));
     }
 }

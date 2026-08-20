@@ -20,7 +20,6 @@ public class MultiTierCacheProvider implements CacheProvider {
 
     @Override
     public Mono<String> get(String key) {
-        return l1Cache.get(key)
-            .switchIfEmpty(Mono.defer(() -> l2Cache.get(key))); 
+        return l1Cache.get(key);
     }
 }

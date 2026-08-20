@@ -8,5 +8,5 @@ spec:
     app: bidding-engine
   ports:
     - protocol: TCP
-      port: 8091
-      targetPort: 8091
+      port: 8102
+      targetPort: 8102

@@ -19,6 +19,7 @@ public class CaffeineCacheProvider implements CacheProvider {
     
     public CaffeineCacheProvider(Function<String, Mono<String>> fallbackLoader) {
         this.l1Cache = Caffeine.newBuilder()
+            .expireAfterWrite(30, TimeUnit.SECONDS)
             .refreshAfterWrite(10, TimeUnit.MINUTES)
             .maximumSize(100_000)
             .buildAsync((key, executor) -> fallbackLoader.apply(key).toFuture());

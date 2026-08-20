@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 public final class BiddingConstants {
     private BiddingConstants() {}
 
-    public static final String DEFAULT_GEO = "US";
+    public static final String DEFAULT_GEO = "IN";
     public static final String PREFIX_BID_ID = "bid-";
     public static final String PREFIX_AD_ID = "ad-";
     public static final String DEFAULT_PACING_MULTIPLIER_STRING = "1.0";

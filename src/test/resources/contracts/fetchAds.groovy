@@ -1,4 +1,3 @@
-
 import org.springframework.cloud.contract.spec.Contract
 
 Contract.make {
@@ -10,8 +9,9 @@ Contract.make {
             contentType applicationJson()
         }
         body([
-            userId: $(consumer(regex('.*')), producer('user123')),
-            location: 'test'
+            geo: 'test-geo',
+            deviceId: 'device-123',
+            context: 'test-context'
         ])
     }
     response {
@@ -19,9 +19,13 @@ Contract.make {
         headers {
             contentType applicationJson()
         }
-        body([
-            adId: 'ad123',
-            content: 'Test Ad'
-        ])
+        body([[
+            adId: 'AD-12345-campaign-1',
+            campaignId: 'campaign-1',
+            impUrl: 'http://impression',
+            clickUrl: 'http://click',
+            adm: 'http://cdn/sponsored.jpg',
+            format: 'BANNER'
+        ]])
     }
 }

@@ -5,13 +5,15 @@ public class SponsoredListingDTO {
     public String campaignId;
     public String impressionUrl;
     public String clickUrl;
-    public String imageUrl;
+    public String adm;
+    public String creativeFormat;
     
-    public SponsoredListingDTO(String adId, String campaignId, String impressionUrl, String clickUrl, String imageUrl) {
+    public SponsoredListingDTO(String adId, String campaignId, String impressionUrl, String clickUrl, String adm, String creativeFormat) {
         this.adId = adId;
         this.campaignId = campaignId;
         this.impressionUrl = impressionUrl;
         this.clickUrl = clickUrl;
-        this.imageUrl = imageUrl;
+        this.adm = adm;
+        this.creativeFormat = creativeFormat;
     }
 }

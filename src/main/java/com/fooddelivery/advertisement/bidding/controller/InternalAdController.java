@@ -19,7 +19,9 @@ import com.fooddelivery.advertisement.bidding.cache.CacheProvider;
 import com.fooddelivery.common.constants.RedisKeyConstants;
 import reactor.core.publisher.Flux;
 import java.math.BigDecimal;
-import java.util.Base64;
+import java.time.Duration;
+import java.util.UUID;
+import com.fooddelivery.common.security.AuctionTokenService;
 
 @RestController
 @RequestMapping("/api/v1/ads")
@@ -31,56 +33,111 @@ public class InternalAdController {
     private final List<TargetingFilter> filterChain;
     private final BidPricer bidPricer;
     private final CacheProvider cacheProvider;
+    private final TrackingUrlConstants trackingUrlConstants;
+    private final com.fooddelivery.common.service.RateLimitingService rateLimitingService;
+    private final AuctionTokenService auctionTokenService;
 
-    public InternalAdController(CampaignMatcher matcher, List<TargetingFilter> filterChain, BidPricer bidPricer, CacheProvider cacheProvider) {
+    public InternalAdController(CampaignMatcher matcher, List<TargetingFilter> filterChain, BidPricer bidPricer, CacheProvider cacheProvider, TrackingUrlConstants trackingUrlConstants, com.fooddelivery.common.service.RateLimitingService rateLimitingService, AuctionTokenService auctionTokenService) {
         this.matcher = matcher;
         this.filterChain = filterChain;
         this.bidPricer = bidPricer;
         this.cacheProvider = cacheProvider;
+        this.trackingUrlConstants = trackingUrlConstants;
+        this.rateLimitingService = rateLimitingService;
+        this.auctionTokenService = auctionTokenService;
     }
 
     @PostMapping("/serve")
     public Mono<ResponseEntity<List<SponsoredListingDTO>>> serveAds(@RequestBody AdRequestDTO request) {
+        try {
+            rateLimitingService.enforceRateLimit("internal", "ads-serve");
+        } catch (RuntimeException e) {
+            return Mono.just(ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).build());
+        }
+        
         String geo = (request.geo != null && !request.geo.isEmpty()) ? request.geo : BiddingConstants.DEFAULT_GEO;
         List<CampaignIndexData> matchedCampaigns = matcher.match(geo);
-        
-        if (matchedCampaigns.isEmpty()) {
-            return Mono.just(ResponseEntity.ok(List.of()));
+        // Map AdRequestDTO to a dummy BidRequest for filters
+        com.fooddelivery.advertisement.bidding.model.BidRequest dummyBidRequest = new com.fooddelivery.advertisement.bidding.model.BidRequest();
+        dummyBidRequest.user = new com.fooddelivery.advertisement.bidding.model.User();
+        dummyBidRequest.user.geo = geo;
+
+        List<CampaignIndexData> filteredCampaigns = matchedCampaigns.stream().filter(campaignData -> {
+            for (TargetingFilter filter : filterChain) {
+                if (!filter.evaluate(dummyBidRequest, campaignData)) {
+                    return false;
+                }
+            }
+            return true;
+        }).collect(Collectors.toList());
+
+        class PricedCampaign {
+            CampaignIndexData data;
+            BigDecimal bidPrice;
+            String encryptedPrice;
+            PricedCampaign(CampaignIndexData d, BigDecimal bp, String ep) { this.data = d; this.bidPrice = bp; this.encryptedPrice = ep; }
         }
 
-        return Flux.fromIterable(matchedCampaigns)
-            .take(3)
-            .flatMap(campaignData -> {
-                String campaignId = campaignData.campaignId;
-                Mono<String> pacingMono = cacheProvider.get(String.format(RedisKeyConstants.PREFIX_AD_CAMPAIGN_PACING, campaignId))
-                    .defaultIfEmpty(BiddingConstants.DEFAULT_PACING_MULTIPLIER_STRING);
-                Mono<String> maxBidMono = cacheProvider.get(String.format(RedisKeyConstants.PREFIX_AD_CAMPAIGN_MAX_BID, campaignId))
-                    .defaultIfEmpty("");
-
-                return Mono.zip(pacingMono, maxBidMono).flatMap(tuple -> {
-                    String pacingStr = tuple.getT1();
-                    String maxBidStr = tuple.getT2();
-                    if (maxBidStr.isEmpty()) {
-                        return Mono.empty();
-                    }
-                    
-                    double pacingS = Double.parseDouble(pacingStr);
-                    BigDecimal maxBid = new BigDecimal(maxBidStr);
-                    BigDecimal bidPrice = bidPricer.price(PricingStrategyType.FIRST_PRICE_SHADED_STRATEGY, campaignId, maxBid, pacingS);
-                    
-                    String encryptedPrice = Base64.getUrlEncoder().encodeToString(bidPrice.toPlainString().getBytes());
-                    
-                    SponsoredListingDTO dto = new SponsoredListingDTO(
-                        BiddingConstants.PREFIX_AD_ID + System.currentTimeMillis() + "-" + campaignId,
-                        campaignId,
-                        String.format(TrackingUrlConstants.IMPRESSION_TRACKING_URL_TEMPLATE, campaignId, campaignData.advertiserId) + "&wp=" + encryptedPrice,
-                        String.format(TrackingUrlConstants.CLICK_TRACKING_URL_TEMPLATE, campaignId, campaignData.advertiserId) + "&wp=" + encryptedPrice,
-                        String.format(TrackingUrlConstants.CDN_SPONSORED_IMAGE_TEMPLATE, campaignId)
-                    );
-                    return Mono.just(dto);
-                });
+        List<PricedCampaign> pricedCampaigns = filteredCampaigns.stream()
+            .map(campaignData -> {
+                BigDecimal maxBid = campaignData.maxBid;
+                if (maxBid == null) return null;
+                double pacingS = campaignData.pacingMultiplier >= 0 ? Math.max(0.0, Math.min(1.0, campaignData.pacingMultiplier)) : 1.0;
+                BigDecimal bidPrice = bidPricer.price(PricingStrategyType.FIRST_PRICE_SHADED_STRATEGY, campaignData.campaignId, maxBid, pacingS);
+                if (bidPrice.compareTo(maxBid) > 0) {
+                    bidPrice = maxBid;
+                }
+                UUID auctionId = UUID.randomUUID();
+                String encryptedPrice = auctionTokenService.issue(
+                        UUID.fromString(campaignData.campaignId),
+                        UUID.fromString(campaignData.advertiserId),
+                        bidPrice,
+                        auctionId,
+                        Duration.ofHours(24)
+                );
+                return new PricedCampaign(campaignData, bidPrice, encryptedPrice);
             })
-            .collectList()
-            .map(ResponseEntity::ok);
+            .filter(pc -> pc != null)
+            .sorted((a, b) -> b.bidPrice.compareTo(a.bidPrice))
+            .limit(3)
+            .collect(Collectors.toList());
+
+        List<SponsoredListingDTO> results = pricedCampaigns.stream()
+            .map(pc -> {
+                String campaignId = pc.data.campaignId;
+                String advertiserId = pc.data.advertiserId;
+                String encryptedPrice = pc.encryptedPrice;
+                
+                String impUrl = String.format(trackingUrlConstants.impressionTrackingUrlTemplate, campaignId, advertiserId, com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE);
+                impUrl = impUrl.contains("wp=" + com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE) ? 
+                         impUrl.replace("wp=" + com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE, "wp=" + encryptedPrice) : 
+                         impUrl + "&wp=" + encryptedPrice;
+                         
+                String clickUrl = String.format(trackingUrlConstants.clickTrackingUrlTemplate, campaignId, advertiserId);
+                clickUrl = clickUrl.contains("wp=" + com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE) ? 
+                           clickUrl.replace("wp=" + com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE, "wp=" + encryptedPrice) : 
+                           clickUrl + "&wp=" + encryptedPrice;
+
+                String adm = null;
+                if ("VIDEO_VAST".equals(pc.data.creativeFormat)) {
+                    adm = pc.data.creativeVastXml;
+                } else if (pc.data.creativeAssetUrl != null) {
+                    adm = pc.data.creativeAssetUrl;
+                } else {
+                    adm = String.format(trackingUrlConstants.cdnSponsoredImageTemplate, campaignId);
+                }
+
+                return new SponsoredListingDTO(
+                    BiddingConstants.PREFIX_AD_ID + System.currentTimeMillis() + "-" + campaignId,
+                    campaignId,
+                    impUrl,
+                    clickUrl,
+                    adm,
+                    pc.data.creativeFormat != null ? pc.data.creativeFormat : "BANNER"
+                );
+            })
+            .collect(Collectors.toList());
+
+        return Mono.just(ResponseEntity.ok(results));
     }
 }

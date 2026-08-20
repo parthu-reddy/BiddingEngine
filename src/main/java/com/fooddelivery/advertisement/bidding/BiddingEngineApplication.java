@@ -6,7 +6,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
 @SpringBootApplication(scanBasePackages = {"com.fooddelivery.advertisement.bidding", "com.fooddelivery.common", "com.fooddelivery"})
+@EnableFeignClients
 public class BiddingEngineApplication {
     public static void main(String[] args) {
         SpringApplication.run(BiddingEngineApplication.class, args);
