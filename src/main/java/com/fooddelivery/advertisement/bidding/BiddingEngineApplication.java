@@ -8,7 +8,9 @@ import org.springframework.context.annotation.FilterType;
 
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
-@SpringBootApplication(scanBasePackages = {"com.fooddelivery.advertisement.bidding", "com.fooddelivery.common", "com.fooddelivery"})
+@SpringBootApplication(
+    scanBasePackages = {"com.fooddelivery.advertisement.bidding", "com.fooddelivery.common"}
+)
 @EnableFeignClients
 public class BiddingEngineApplication {
     public static void main(String[] args) {
