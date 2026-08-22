@@ -1,5 +1,7 @@
 package com.fooddelivery.advertisement.bidding.contract;
 
+import com.fooddelivery.common.contract.KafkaStubMessageSender;
+
 import com.fooddelivery.advertisement.bidding.matcher.CampaignMatcher;
 import com.fooddelivery.advertisement.bidding.messaging.CampaignEventConsumer;
 import com.fooddelivery.advertisement.bidding.messaging.RedisIdempotencyService;
@@ -25,7 +27,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * Consumes CampaignService's real ad_events stub and asserts the campaign reaches the bidding matcher.
@@ -37,14 +41,14 @@ import static org.mockito.Mockito.verify;
  */
 @SpringBootTest(classes = CampaignIndexingConsumerContractTest.TestConfig.class,
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        properties = "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration,org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration")
+        properties = "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration")
 @ActiveProfiles("contract-test")
 @AutoConfigureStubRunner(ids = {
         "com.fooddelivery:campaign-service:+:stubs",
         "com.fooddelivery:budget-pacing-service:+:stubs",
         "com.fooddelivery:wallet-service:+:stubs"
 }, stubsMode = StubRunnerProperties.StubsMode.LOCAL)
-@EmbeddedKafka(partitions = 1, topics = {"ad-events", "campaign-alerts"})
+@EmbeddedKafka(partitions = 1, topics = {"ad-events"})
 class CampaignIndexingConsumerContractTest {
 
     @org.springframework.boot.test.context.TestConfiguration
@@ -93,23 +97,34 @@ class CampaignIndexingConsumerContractTest {
     }
 
     @Test
-    void removesTheCampaignOnBudgetExhausted() {
+    void marksTheCampaignExhaustedOnBudgetExhausted() {
+        // Budget exhaustion is reversible (top-up, daily reset), so the campaign is flagged
+        // rather than evicted -- removing it would discard its indexed targeting state.
         stubTrigger.trigger("ad_events_exhausted");
         await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                verify(matcher).removeCampaign(anyString()));
+                verify(matcher).updateBudgetExhausted(anyString(), eq(true)));
     }
 
     @Test
-    void indexesTheCampaignOnPacingUpdated() {
+    void updatesPacingOnPacingUpdated() {
+        // AD_CAMPAIGN_PACING_UPDATED carries only the multiplier, not the targeting payload,
+        // so the matcher adjusts pacing in place instead of re-indexing the campaign.
         stubTrigger.trigger("ad_events_pacing");
         await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                verify(matcher).indexCampaign(anyString(), any(), anyString(), any(), anyDouble(), anyBoolean(), any(), any(), any(), any()));
+                verify(matcher).updatePacing(anyString(), anyDouble(), anyBoolean()));
     }
 
+    /**
+     * WalletService publishes AD_BUDGET_ALERT to {@code ad-events} (outbox aggregateType
+     * ADVERTISEMENT), so this consumer does receive it -- but a low-balance alert is not itself a
+     * serving decision. CampaignService's CampaignAlertConsumer owns it and re-publishes
+     * AD_CAMPAIGN_BUDGET_EXHAUSTED, which is what actually flips the matcher. The poll delay lets
+     * the event be consumed before asserting, so this is a real negative rather than a race.
+     */
     @Test
-    void removesTheCampaignOnBudgetAlert() {
+    void ignoresBudgetAlertBecauseExhaustionIsSignalledSeparately() {
         stubTrigger.trigger("ad_budget_alert");
-        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                verify(matcher).removeCampaign(anyString()));
+        await().pollDelay(3, TimeUnit.SECONDS).atMost(15, TimeUnit.SECONDS)
+                .untilAsserted(() -> verifyNoInteractions(matcher));
     }
 }

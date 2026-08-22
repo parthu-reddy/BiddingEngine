@@ -37,10 +37,25 @@ public class BiddingService {
         this.auctionTokenService = auctionTokenService;
     }
 
+    @jakarta.annotation.PostConstruct
+    public void initMetrics() {
+        meterRegistry.counter("auction.bids.count").increment(0);
+        meterRegistry.counter("auction.requests.count").increment(0);
+    }
+
     public Optional<BidResponse> processBidSync(BidRequest request) {
+        meterRegistry.counter("auction.requests.count").increment();
         String geo = (request.user != null && request.user.geo != null) ? request.user.geo : BiddingConstants.DEFAULT_GEO;
+
         
-        List<CampaignIndexData> matchedCampaigns = matcher.match(geo);
+        List<CampaignIndexData> matchedCampaigns = new java.util.ArrayList<>();
+        matchedCampaigns.addAll(matcher.match(geo));
+        if (!BiddingConstants.DEFAULT_GEO.equals(geo)) {
+            matchedCampaigns.addAll(matcher.match(BiddingConstants.DEFAULT_GEO));
+        }
+        if (!"GLOBAL".equals(geo)) {
+            matchedCampaigns.addAll(matcher.match("GLOBAL"));
+        }
         if (matchedCampaigns.isEmpty()) {
             meterRegistry.counter("bid_skipped_total", "reason", "no_match").increment();
             return Optional.empty();
@@ -127,6 +142,7 @@ public class BiddingService {
         SeatBid seatBid = new SeatBid(List.of(bid));
         BidResponse response = new BidResponse(request.id, List.of(seatBid));
         
+        meterRegistry.counter("auction.bids.count").increment();
         return Optional.of(response);
     }
 }

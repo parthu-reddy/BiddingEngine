@@ -60,11 +60,17 @@ flowchart TB
     style L1Destroyed fill:#f44336,color:#fff
 ```
 
-### 3. Lock-Free Concurrency (LMAX Disruptor)
-- **Constraint**: `java.util.concurrent.ArrayBlockingQueue` or any lock-based queues are strictly prohibited.
-- Utilizes the **LMAX Disruptor** ring buffer for lock-free inter-thread messaging.
-- Pre-allocates the entire ring buffer at startup. Ensures **zero object allocations** (no `new` keywords) during the critical path to eliminate JVM Garbage Collection pauses.
-- Sequence counters are padded to 64/128 bytes to prevent **False Sharing**.
+### 3. Index Concurrency
+
+**As implemented.** `CampaignMatcher` guards its four maps and the Roaring Bitmap geo index with a
+single `ReentrantReadWriteLock`. Bid evaluation takes the read lock; index mutations arriving from
+`ad-events` take the write lock. Concurrent reads do not block each other, but a write blocks all
+readers for its duration.
+
+**Design intent, not built.** The LMAX Disruptor dependency has been removed from `pom.xml`; it was
+never referenced in the source. The lock-free ring buffer, pre-allocated at startup with zero allocations on
+the critical path and cache-line padded sequence counters, remains a target — worth revisiting only
+if a benchmark shows the write lock is a real bottleneck at production write rates.
 
 ```mermaid
 flowchart LR
@@ -73,7 +79,7 @@ flowchart LR
         P2["Tracking Event<br/>Handler"]
     end
 
-    subgraph Ring["LMAX Disruptor Ring Buffer"]
+    subgraph Ring["Bid pipeline (design intent: Disruptor ring buffer)"]
         direction TB
         Slot["Pre-allocated slots<br/>Size: power of 2<br/>Slot = seq AND (size-1)"]
         Seq["Atomic Sequence Counters<br/>Cache-line padded<br/>64 or 128 bytes"]
@@ -109,7 +115,10 @@ flowchart LR
 - Maintains an in-memory inverted index of eligible campaigns using `RoaringBitmap`.
 - Performs rapid boolean AND/OR bitwise intersections across targeting dimensions (Geo, Device, Demographics, Dayparting, Context).
 - **Memory Optimization**: Roaring Bitmaps divide 32-bit integers into chunks. If a chunk contains fewer than 4,096 elements, it is stored as a highly memory-efficient sorted array of 16-bit integers. If it exceeds this threshold, it upgrades to a traditional bitset container. Contiguous runs are compressed using Run-Length Encoding.
-- Uses Read-Copy-Update (RCU) / double-buffering to atomically swap index references when Kafka updates arrive, ensuring read threads are never blocked.
+- **Index updates (as implemented)**: Kafka updates mutate the bitmaps in place under a write lock,
+  which briefly blocks readers. Read-Copy-Update / double-buffering — building a new snapshot and
+  swapping an `AtomicReference` so readers are never blocked — is design intent, not current
+  behaviour.
 
 ### 5. Targeting Filter Chain (Chain of Responsibility)
 Filters eligible campaigns from cheapest to most expensive computational cost:
@@ -150,7 +159,9 @@ If any filter returns `false`, the chain terminates immediately to conserve CPU 
 
 ### 6. Bid Pricing (Strategy Pattern & Bid Shading)
 The `BidPricer` combines budget pacing multipliers and auction-specific pricing strategies:
-- **FirstPriceShadedStrategy**: Uses ML to predict the lowest clearing price necessary to win, and shades the bid down from the advertiser's max to maximize savings.
+- **FirstPriceShadedStrategy**: Shades the bid down from the advertiser's max by a fixed
+  `SHADING_FACTOR` constant, scaled by the pacing multiplier. The clearing-price model in the diagram
+  below is *design intent, not built* — no prediction happens today.
 - **SecondPriceStrategy**: Returns the true max bid, relying on exchange mechanics.
 - **FixedPricingStrategy**: Static bid execution.
 Always validates the final bid against the exchange's `bidfloor`.
@@ -332,10 +343,8 @@ classDiagram
     }
 
     class FormatFilter
-    class GeoFilter
     class FinancialFilter
     class PacingFilter
-    class BrandSafetyFilter
 
     class PricingStrategy {
         <<Interface - Strategy>>
@@ -351,10 +360,8 @@ classDiagram
     CacheProvider <|.. NoOpCacheProvider
 
     TargetingFilter <|.. FormatFilter
-    TargetingFilter <|.. GeoFilter
     TargetingFilter <|.. FinancialFilter
     TargetingFilter <|.. PacingFilter
-    TargetingFilter <|.. BrandSafetyFilter
 
     PricingStrategy <|.. FixedPricingStrategy
     PricingStrategy <|.. FirstPriceShadedStrategy
@@ -430,4 +437,4 @@ How this service integrates with the broader Food Delivery platform:
 
 - **CustomerApplication**: `CustomerApplication` calls `BiddingEngine` via FeignClient (`POST /api/v1/ads/serve`) when a user searches for food. The `BiddingEngine` evaluates targeting (geo, time, context) and returns sponsored listings. `CustomerApplication` implements a fallback that returns an empty list on failure, ensuring ad failures never block core food ordering.
 - **ApiGateway**: OpenRTB bidding routes (`/api/v1/ads/**`) are mapped here for external SSPs and ad exchanges.
-- **ConfigService**: Externalizes critical ML shading parameters, cache TTLs, and Disruptor configs.
+- **ConfigService**: Externalizes bid-shading parameters and cache TTLs.

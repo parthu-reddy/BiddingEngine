@@ -17,4 +17,8 @@ public class RedisIdempotencyService {
         Boolean success = redisTemplate.opsForValue().setIfAbsent(key, "PROCESSED", 7, TimeUnit.DAYS);
         return Boolean.FALSE.equals(success);
     }
+
+    public void removeKey(String key) {
+        redisTemplate.delete(key);
+    }
 }

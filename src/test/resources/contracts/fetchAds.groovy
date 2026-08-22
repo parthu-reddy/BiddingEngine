@@ -22,10 +22,10 @@ Contract.make {
         body([[
             adId: 'AD-12345-campaign-1',
             campaignId: 'campaign-1',
-            impUrl: 'http://impression',
+            impressionUrl: 'http://impression',
             clickUrl: 'http://click',
             adm: 'http://cdn/sponsored.jpg',
-            format: 'BANNER'
+            creativeFormat: 'BANNER'
         ]])
     }
 }

@@ -20,11 +20,7 @@ spring:
     enabled: false
   cache:
     type: none
-  autoconfigure:
-    exclude:
-    - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-    - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
-    - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+
   kafka:
     consumer:
       auto-offset-reset: earliest

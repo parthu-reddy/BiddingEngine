@@ -3,11 +3,9 @@ package com.fooddelivery.advertisement.bidding.contract;
 import com.fooddelivery.advertisement.bidding.controller.InternalAdController;
 import com.fooddelivery.advertisement.bidding.model.internal.AdRequestDTO;
 import com.fooddelivery.advertisement.bidding.model.internal.SponsoredListingDTO;
-import io.restassured.module.mockmvc.RestAssuredMockMvc;
+import io.restassured.module.webtestclient.RestAssuredWebTestClient;
 import org.junit.jupiter.api.BeforeEach;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.mockito.Mockito;
 import org.springframework.http.ResponseEntity;
 import reactor.core.publisher.Mono;
 
@@ -16,15 +14,22 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK, classes = com.fooddelivery.advertisement.bidding.BiddingEngineApplication.class)
+/**
+ * Base class for the generated {@code fetchAds} HTTP contract test.
+ *
+ * <p>BiddingEngine is a WebFlux application and {@link InternalAdController#serveAds} returns
+ * {@code Mono<ResponseEntity<List<SponsoredListingDTO>>>}. The contract plugin therefore runs in
+ * WEBTESTCLIENT mode: under the default MOCKMVC mode the reactive return value is never dispatched
+ * and every request comes back 200 with an empty body and no Content-Type.
+ *
+ * <p>Binding the controller directly with WebTestClient also keeps the contract hermetic -- no
+ * Spring context, so no Redis, Kafka, or Eureka is required to verify the wire shape.
+ */
 public class BaseContractTest {
-
-    @MockBean
-    private InternalAdController internalAdController;
 
     @BeforeEach
     public void setup() {
-        RestAssuredMockMvc.standaloneSetup(internalAdController);
+        InternalAdController internalAdController = Mockito.mock(InternalAdController.class);
 
         SponsoredListingDTO mockListing = new SponsoredListingDTO(
             "AD-12345-campaign-1",
@@ -37,5 +42,7 @@ public class BaseContractTest {
 
         when(internalAdController.serveAds(any(AdRequestDTO.class)))
             .thenReturn(Mono.just(ResponseEntity.ok(List.of(mockListing))));
+
+        RestAssuredWebTestClient.standaloneSetup(internalAdController);
     }
 }

@@ -61,7 +61,7 @@ public class CampaignEventConsumer {
             // was therefore never true, so campaigns were never indexed into or removed from the
             // matcher -- paused and deleted campaigns kept serving.
             String eventTypeStr = com.fooddelivery.common.util.EventPayloadUtils.resolveEventType(root, headers);
-            JsonNode payload = com.fooddelivery.common.util.EventPayloadUtils.unwrapPayload(root);
+            JsonNode payload = root;
             if (eventTypeStr != null && payload != null) {
                 String campaignId = com.fooddelivery.common.util.EventPayloadUtils.campaignId(payload);
                 if (campaignId == null) {
@@ -69,7 +69,7 @@ public class CampaignEventConsumer {
                     log.warn("Dropping ad-event with no resolvable campaign id: {}", eventTypeStr);
                     return;
                 }
-                if (EventType.AD_CAMPAIGN_PAUSED.name().equals(eventTypeStr) || EventType.AD_CAMPAIGN_DELETED.name().equals(eventTypeStr)) {
+                if (EventType.AD_CAMPAIGN_PAUSED.name().equals(eventTypeStr) || EventType.AD_CAMPAIGN_DELETED.name().equals(eventTypeStr) || EventType.AD_CAMPAIGN_COMPLETED.name().equals(eventTypeStr)) {
                     log.info("Removing campaign {} from matcher due to event {}", campaignId, eventTypeStr);
                     matcher.removeCampaign(campaignId);
                 } else if (EventType.AD_CAMPAIGN_BUDGET_EXHAUSTED.name().equals(eventTypeStr)) {
@@ -91,17 +91,15 @@ public class CampaignEventConsumer {
                         if (payload.has("schemaVersion") && payload.get("schemaVersion").asInt() >= 2 && payload.has("targeting")) {
                             try {
                                 targeting = objectMapper.treeToValue(payload.get("targeting"), com.fooddelivery.common.dto.targeting.TargetingSummary.class);
-                                if (targeting != null && targeting.getGeoTargeting() != null && targeting.getGeoTargeting().getLocations() != null && !targeting.getGeoTargeting().getLocations().isEmpty()) {
-                                    geos = java.util.List.of("GLOBAL"); // Fallback for indexer, actual geo handled by filter
+                                if (targeting != null && targeting.getGeoTargeting() != null && targeting.getGeoTargeting().getRegions() != null && !targeting.getGeoTargeting().getRegions().isEmpty()) {
+                                    geos = new java.util.ArrayList<>(targeting.getGeoTargeting().getRegions());
                                 }
                             } catch (Exception e) {
                                 log.warn("Failed to parse targeting summary for campaign {}", campaignId, e);
                             }
                         }
                         
-                        if (geos.isEmpty()) {
-                            geos.add(BiddingConstants.DEFAULT_GEO);
-                        }
+                        // removed DEFAULT_GEO fallback so validator passes; matcher handles it internally
                         
                         java.math.BigDecimal maxBid = null;
                         if (payload.has("maxBid")) {
@@ -130,6 +128,7 @@ public class CampaignEventConsumer {
                 }
             }
         } catch (Exception e) {
+            redisIdempotencyService.removeKey(idempotencyKeyStr);
             log.error("Failed to process campaign event, propagating for retry", e);
             throw new RuntimeException("Failed to process campaign event", e);
         }
@@ -137,6 +136,7 @@ public class CampaignEventConsumer {
 
     @DltHandler
     public void handleDlt(Object message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
-        log.error("Campaign event failed all retries and sent to DLT: {} - {}", topic, message);
+        log.error("Campaign event sent to DLT from topic {}: {}", topic, message);
+        meterRegistry.counter("kafka_dlt_depth_total", "topic", topic).increment();
     }
 }

@@ -5,6 +5,7 @@ import com.fooddelivery.advertisement.bidding.constants.BiddingConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import com.fooddelivery.advertisement.bidding.health.IndexBootstrapHealthIndicator;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -16,10 +17,12 @@ public class IndexBootstrapService {
 
     private final CampaignMatcher campaignMatcher;
     private final CampaignServiceClient campaignServiceClient;
+    private final IndexBootstrapHealthIndicator healthIndicator;
 
-    public IndexBootstrapService(CampaignMatcher campaignMatcher, CampaignServiceClient campaignServiceClient) {
+    public IndexBootstrapService(CampaignMatcher campaignMatcher, CampaignServiceClient campaignServiceClient, IndexBootstrapHealthIndicator healthIndicator) {
         this.campaignMatcher = campaignMatcher;
         this.campaignServiceClient = campaignServiceClient;
+        this.healthIndicator = healthIndicator;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -34,6 +37,7 @@ public class IndexBootstrapService {
                     campaignMatcher.indexCampaign(campaign.id, java.util.List.of(BiddingConstants.DEFAULT_GEO), campaign.advertiserId, campaign.maxBid, pacing, false, null, null, null, null);
                     count++;
                 }
+                healthIndicator.setBootstrapped(true);
                 log.info("Successfully bootstrapped {} campaigns into the index.", count);
             }
         } catch (Exception e) {

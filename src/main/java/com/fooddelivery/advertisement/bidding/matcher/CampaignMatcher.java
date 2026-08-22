@@ -3,51 +3,80 @@ package com.fooddelivery.advertisement.bidding.matcher;
 import org.roaringbitmap.RoaringBitmap;
 import org.springframework.stereotype.Component;
 import com.fooddelivery.advertisement.bidding.model.CampaignIndexData;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Component
 public class CampaignMatcher {
 
-    private final Map<String, Integer> campaignToIdMap = new HashMap<>();
-    private final Map<Integer, String> idToCampaignMap = new HashMap<>();
-    private final Map<String, CampaignIndexData> campaignDataMap = new HashMap<>();
-    private final Map<String, RoaringBitmap> geoIndex = new HashMap<>();
-    private final AtomicInteger sequenceGenerator = new AtomicInteger(1);
-    private final java.util.Queue<Integer> freeList = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    
-    private final java.util.concurrent.locks.ReadWriteLock lock = new java.util.concurrent.locks.ReentrantReadWriteLock();
+    private static class IndexSnapshot {
+        final Map<String, Integer> campaignToIdMap;
+        final Map<Integer, String> idToCampaignMap;
+        final Map<String, CampaignIndexData> campaignDataMap;
+        final Map<String, RoaringBitmap> geoIndex;
+
+        IndexSnapshot(Map<String, Integer> cToI, Map<Integer, String> iToC, Map<String, CampaignIndexData> cData, Map<String, RoaringBitmap> gIndex) {
+            this.campaignToIdMap = Map.copyOf(cToI);
+            this.idToCampaignMap = Map.copyOf(iToC);
+            this.campaignDataMap = Map.copyOf(cData);
+            
+            Map<String, RoaringBitmap> copiedGeo = new HashMap<>();
+            for (Map.Entry<String, RoaringBitmap> entry : gIndex.entrySet()) {
+                copiedGeo.put(entry.getKey(), entry.getValue().clone());
+            }
+            this.geoIndex = Map.copyOf(copiedGeo);
+        }
+    }
+
+    private final AtomicReference<IndexSnapshot> snapshot = new AtomicReference<>(
+            new IndexSnapshot(new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>())
+    );
+
+    private final Lock writeLock = new ReentrantLock();
+    private int sequenceGenerator = 1;
+    private final java.util.Queue<Integer> freeList = new java.util.LinkedList<>();
 
     public void indexCampaign(String campaignId, List<String> geos, String advertiserId, java.math.BigDecimal maxBid, double pacingMultiplier, boolean budgetExhausted, com.fooddelivery.common.dto.targeting.TargetingSummary targeting, String creativeFormat, String creativeAssetUrl, String creativeVastXml) {
-        lock.writeLock().lock();
+        writeLock.lock();
         try {
-            int internalId = campaignToIdMap.computeIfAbsent(campaignId, k -> {
+            IndexSnapshot current = snapshot.get();
+            Map<String, Integer> cToI = new HashMap<>(current.campaignToIdMap);
+            Map<Integer, String> iToC = new HashMap<>(current.idToCampaignMap);
+            Map<String, CampaignIndexData> cData = new HashMap<>(current.campaignDataMap);
+            Map<String, RoaringBitmap> gIndex = new HashMap<>();
+            for (Map.Entry<String, RoaringBitmap> entry : current.geoIndex.entrySet()) {
+                gIndex.put(entry.getKey(), entry.getValue().clone());
+            }
+
+            int internalId;
+            if (cToI.containsKey(campaignId)) {
+                internalId = cToI.get(campaignId);
+            } else {
                 Integer freeId = freeList.poll();
-                int newId = (freeId != null) ? freeId : sequenceGenerator.getAndIncrement();
-                idToCampaignMap.put(newId, k);
-                return newId;
-            });
-            
-            // Remove from old geos if they exist (clean up)
-            for (RoaringBitmap bm : geoIndex.values()) {
+                internalId = (freeId != null) ? freeId : sequenceGenerator++;
+                cToI.put(campaignId, internalId);
+                iToC.put(internalId, campaignId);
+            }
+
+            for (RoaringBitmap bm : gIndex.values()) {
                 bm.remove(internalId);
             }
-            
+
             if (geos != null && !geos.isEmpty()) {
                 for (String geo : geos) {
-                    geoIndex.computeIfAbsent(geo, k -> new RoaringBitmap()).add(internalId);
+                    gIndex.computeIfAbsent(geo, k -> new RoaringBitmap()).add(internalId);
                 }
             } else {
-                geoIndex.computeIfAbsent("DEFAULT_GEO", k -> new RoaringBitmap()).add(internalId);
+                gIndex.computeIfAbsent("DEFAULT_GEO", k -> new RoaringBitmap()).add(internalId);
             }
             
-            CampaignIndexData oldData = campaignDataMap.get(campaignId);
+            CampaignIndexData oldData = cData.get(campaignId);
             String effAdvertiserId = advertiserId != null ? advertiserId : (oldData != null ? oldData.advertiserId : null);
             java.math.BigDecimal effMaxBid = maxBid != null ? maxBid : (oldData != null ? oldData.maxBid : null);
             double effPacing = pacingMultiplier >= 0 ? pacingMultiplier : (oldData != null ? oldData.pacingMultiplier : 1.0);
@@ -56,94 +85,105 @@ public class CampaignMatcher {
             String effCreativeAssetUrl = creativeAssetUrl != null ? creativeAssetUrl : (oldData != null ? oldData.creativeAssetUrl : null);
             String effCreativeVastXml = creativeVastXml != null ? creativeVastXml : (oldData != null ? oldData.creativeVastXml : null);
             
-            campaignDataMap.put(campaignId, new CampaignIndexData(campaignId, effAdvertiserId, effMaxBid, effPacing, budgetExhausted, effTargeting, effCreativeFormat, effCreativeAssetUrl, effCreativeVastXml));
+            cData.put(campaignId, new CampaignIndexData(campaignId, effAdvertiserId, effMaxBid, effPacing, budgetExhausted, effTargeting, effCreativeFormat, effCreativeAssetUrl, effCreativeVastXml));
+
+            snapshot.set(new IndexSnapshot(cToI, iToC, cData, gIndex));
         } finally {
-            lock.writeLock().unlock();
+            writeLock.unlock();
         }
     }
     
     public void updateBudgetExhausted(String campaignId, boolean exhausted) {
-        lock.writeLock().lock();
+        writeLock.lock();
         try {
-            CampaignIndexData oldData = campaignDataMap.get(campaignId);
+            IndexSnapshot current = snapshot.get();
+            CampaignIndexData oldData = current.campaignDataMap.get(campaignId);
             if (oldData != null) {
-                campaignDataMap.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, oldData.pacingMultiplier, exhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+                Map<String, CampaignIndexData> cData = new HashMap<>(current.campaignDataMap);
+                cData.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, oldData.pacingMultiplier, exhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+                snapshot.set(new IndexSnapshot(current.campaignToIdMap, current.idToCampaignMap, cData, current.geoIndex));
             }
         } finally {
-            lock.writeLock().unlock();
+            writeLock.unlock();
         }
     }
     
     public void updatePacing(String campaignId, double pacing, boolean budgetExhausted) {
-        lock.writeLock().lock();
+        writeLock.lock();
         try {
-            CampaignIndexData oldData = campaignDataMap.get(campaignId);
+            IndexSnapshot current = snapshot.get();
+            CampaignIndexData oldData = current.campaignDataMap.get(campaignId);
             if (oldData != null) {
-                campaignDataMap.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, pacing, budgetExhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+                Map<String, CampaignIndexData> cData = new HashMap<>(current.campaignDataMap);
+                cData.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, pacing, budgetExhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+                snapshot.set(new IndexSnapshot(current.campaignToIdMap, current.idToCampaignMap, cData, current.geoIndex));
             }
         } finally {
-            lock.writeLock().unlock();
+            writeLock.unlock();
         }
     }
     
     public boolean getBudgetExhausted(String campaignId) {
-        lock.readLock().lock();
-        try {
-            CampaignIndexData data = campaignDataMap.get(campaignId);
-            return data != null && data.budgetExhausted;
-        } finally {
-            lock.readLock().unlock();
-        }
+        CampaignIndexData data = snapshot.get().campaignDataMap.get(campaignId);
+        return data != null && data.budgetExhausted;
     }
 
     public void removeCampaign(String campaignId) {
-        lock.writeLock().lock();
+        writeLock.lock();
         try {
-            Integer internalId = campaignToIdMap.remove(campaignId);
+            IndexSnapshot current = snapshot.get();
+            Map<String, Integer> cToI = new HashMap<>(current.campaignToIdMap);
+            Map<Integer, String> iToC = new HashMap<>(current.idToCampaignMap);
+            Map<String, CampaignIndexData> cData = new HashMap<>(current.campaignDataMap);
+            Map<String, RoaringBitmap> gIndex = new HashMap<>();
+            for (Map.Entry<String, RoaringBitmap> entry : current.geoIndex.entrySet()) {
+                gIndex.put(entry.getKey(), entry.getValue().clone());
+            }
+
+            Integer internalId = cToI.remove(campaignId);
             if (internalId != null) {
-                idToCampaignMap.remove(internalId);
-                for (RoaringBitmap bm : geoIndex.values()) {
+                iToC.remove(internalId);
+                for (RoaringBitmap bm : gIndex.values()) {
                     bm.remove(internalId);
                 }
                 freeList.offer(internalId);
             }
-            campaignDataMap.remove(campaignId);
+            cData.remove(campaignId);
+            snapshot.set(new IndexSnapshot(cToI, iToC, cData, gIndex));
         } finally {
-            lock.writeLock().unlock();
+            writeLock.unlock();
         }
     }
 
     public String getAdvertiserId(String campaignId) {
-        lock.readLock().lock();
-        try {
-            CampaignIndexData data = campaignDataMap.get(campaignId);
-            return data != null ? data.advertiserId : null;
-        } finally {
-            lock.readLock().unlock();
-        }
+        CampaignIndexData data = snapshot.get().campaignDataMap.get(campaignId);
+        return data != null ? data.advertiserId : null;
     }
 
     public List<CampaignIndexData> match(String geo) {
         List<CampaignIndexData> results = new ArrayList<>();
-        lock.readLock().lock();
-        try {
-            RoaringBitmap matches = geoIndex.get(geo);
-            if (matches == null) return results;
+        IndexSnapshot current = snapshot.get();
+        RoaringBitmap matches = current.geoIndex.get(geo);
+        if (matches == null) return results;
 
-            org.roaringbitmap.IntIterator it = matches.getIntIterator();
-            while (it.hasNext()) {
-                String campaignId = idToCampaignMap.get(it.next());
-                if (campaignId != null) {
-                    CampaignIndexData data = campaignDataMap.get(campaignId);
-                    if (data != null) {
-                        results.add(data);
-                    }
+        org.roaringbitmap.IntIterator it = matches.getIntIterator();
+        while (it.hasNext()) {
+            String campaignId = current.idToCampaignMap.get(it.next());
+            if (campaignId != null) {
+                CampaignIndexData data = current.campaignDataMap.get(campaignId);
+                if (data != null) {
+                    results.add(data);
                 }
             }
-        } finally {
-            lock.readLock().unlock();
         }
         return results;
     }
-}
 
+    public int getIndexedCampaignsCount() {
+        return snapshot.get().campaignDataMap.size();
+    }
+
+    public List<String> getAllIndexedCampaignIds() {
+        return new ArrayList<>(snapshot.get().campaignDataMap.keySet());
+    }
+}
