@@ -6,4 +6,5 @@ public class BidRequest {
     public User user;
     public Integer at = 2;
     public Long tmax;
+    public String context;
 }

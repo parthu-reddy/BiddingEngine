@@ -14,32 +14,41 @@ spec:
         app: bidding-engine
     spec:
       containers:
-        - name: bidding-engine
-          image: food-delivery/bidding-engine:latest
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 8102
-          envFrom:
-            - configMapRef:
-                name: advertisement-config
-          env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: "prod"
-          livenessProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: 8102
-          readinessProbe:
-            httpGet:
-              path: /actuator/health/readiness
-              port: 8102
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: prod
+        envFrom:
+        - configMapRef:
+            name: advertisement-config
+        image: food-delivery/bidding-engine:latest
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8102
+          initialDelaySeconds: 45
+          periodSeconds: 10
+        name: bidding-engine
+        ports:
+        - containerPort: 8102
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health/indexBootstrap
+            port: 8102
+          initialDelaySeconds: 30
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+          requests:
+            cpu: 250m
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true

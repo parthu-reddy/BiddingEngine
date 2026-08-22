@@ -34,7 +34,13 @@ public class IndexBootstrapService {
                 int count = 0;
                 for (CampaignServiceClient.ActiveCampaignDTO campaign : activeCampaigns) {
                     double pacing = campaign.pacingMultiplier != null ? campaign.pacingMultiplier : -1.0;
-                    campaignMatcher.indexCampaign(campaign.id, java.util.List.of(BiddingConstants.DEFAULT_GEO), campaign.advertiserId, campaign.maxBid, pacing, false, null, null, null, null);
+                    java.util.List<String> geos = java.util.List.of(BiddingConstants.DEFAULT_GEO);
+                    if (campaign.targeting != null && campaign.targeting.getGeoTargeting() != null 
+                        && campaign.targeting.getGeoTargeting().getRegions() != null 
+                        && !campaign.targeting.getGeoTargeting().getRegions().isEmpty()) {
+                        geos = new java.util.ArrayList<>(campaign.targeting.getGeoTargeting().getRegions());
+                    }
+                    campaignMatcher.indexCampaign(campaign.id, geos, campaign.advertiserId, campaign.maxBid, pacing, false, campaign.targeting, null, null, null);
                     count++;
                 }
                 healthIndicator.setBootstrapped(true);

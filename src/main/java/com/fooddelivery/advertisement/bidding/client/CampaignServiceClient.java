@@ -16,5 +16,6 @@ public interface CampaignServiceClient {
         public String advertiserId;
         public java.math.BigDecimal maxBid;
         public Double pacingMultiplier;
+        public com.fooddelivery.common.dto.targeting.TargetingSummary targeting;
     }
 }

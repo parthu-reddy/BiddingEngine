@@ -62,6 +62,7 @@ public class InternalAdController {
         dummyBidRequest.user = new com.fooddelivery.advertisement.bidding.model.User();
         dummyBidRequest.user.geo = geo;
         dummyBidRequest.user.id = request.deviceId;
+        dummyBidRequest.context = request.context;
 
         List<CampaignIndexData> filteredCampaigns = matchedCampaigns.stream().filter(campaignData -> {
             for (TargetingFilter filter : filterChain) {

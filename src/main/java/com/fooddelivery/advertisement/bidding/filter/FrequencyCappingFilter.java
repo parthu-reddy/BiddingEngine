@@ -19,6 +19,10 @@ public class FrequencyCappingFilter implements TargetingFilter {
 
     @Override
     public boolean evaluate(BidRequest request, CampaignIndexData campaign) {
+        // Note: For internal traffic, request.user.id is explicitly set to deviceId by InternalAdController, 
+        // matching the ad:cap:{deviceId}:{campaignId} keys written by UserTrackingService.
+        // For OpenRTB traffic, user.id is the exchange-supplied identifier. RTB traffic is NOT capped 
+        // by us internally (since identity spaces differ), relying on the exchange's capping instead.
         String identifier = null;
         if (request.user != null && request.user.id != null) {
             identifier = request.user.id;
