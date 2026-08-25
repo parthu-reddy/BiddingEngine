@@ -51,8 +51,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 @EmbeddedKafka(partitions = 1, topics = {"ad-events"})
 class CampaignIndexingConsumerContractTest {
 
-    @org.springframework.boot.test.context.TestConfiguration
+    @org.springframework.boot.SpringBootConfiguration
     @org.springframework.boot.autoconfigure.EnableAutoConfiguration
+    
     @Import(CampaignEventConsumer.class)
     static class TestConfig {
         @Bean
