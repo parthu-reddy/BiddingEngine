@@ -1,10 +1,13 @@
 package com.fooddelivery.advertisement.bidding.model.internal;
 
 public class SponsoredListingDTO {
+    @io.swagger.v3.oas.annotations.media.Schema(requiredMode = io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED)
     public String adId;
+    @io.swagger.v3.oas.annotations.media.Schema(requiredMode = io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED)
     public String campaignId;
     public String impressionUrl;
     public String clickUrl;
+    @io.swagger.v3.oas.annotations.media.Schema(requiredMode = io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED)
     public String adm;
     public String creativeFormat;
     

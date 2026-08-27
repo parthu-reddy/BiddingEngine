@@ -78,6 +78,7 @@
   "components" : {
     "schemas" : {
       "Bid" : {
+        "required" : [ "id", "impid", "price" ],
         "type" : "object",
         "properties" : {
           "id" : {
@@ -101,6 +102,7 @@
         }
       },
       "BidResponse" : {
+        "required" : [ "id", "seatbid" ],
         "type" : "object",
         "properties" : {
           "id" : {
@@ -118,6 +120,7 @@
         }
       },
       "SeatBid" : {
+        "required" : [ "bid" ],
         "type" : "object",
         "properties" : {
           "bid" : {
@@ -129,6 +132,7 @@
         }
       },
       "AdRequestDTO" : {
+        "required" : [ "context", "deviceId", "geo" ],
         "type" : "object",
         "properties" : {
           "geo" : {
@@ -143,6 +147,7 @@
         }
       },
       "SponsoredListingDTO" : {
+        "required" : [ "adId", "adm", "campaignId" ],
         "type" : "object",
         "properties" : {
           "adId" : {
