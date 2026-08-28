@@ -47,6 +47,8 @@ public class InternalAdController {
         this.auctionTokenService = auctionTokenService;
     }
 
+    /** Called by CustomerApplication while serving a user request, so a principal is present. */
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     @PostMapping("/serve")
     public Mono<ResponseEntity<List<SponsoredListingDTO>>> serveAds(@RequestBody AdRequestDTO request) {
         try {

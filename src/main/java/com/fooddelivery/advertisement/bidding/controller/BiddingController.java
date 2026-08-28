@@ -24,6 +24,7 @@ public class BiddingController {
         this.rateLimitingService = rateLimitingService;
     }
 
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     @PostMapping(value = "/rtb", consumes = "application/x-protobuf")
     public Mono<ResponseEntity<BidResponse>> handleBidRequestProto(@RequestBody byte[] payload) {
         try {
@@ -35,6 +36,7 @@ public class BiddingController {
         }
     }
 
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     @PostMapping(value = "/rtb", consumes = "application/json")
     public Mono<ResponseEntity<BidResponse>> handleBidRequestJson(@RequestBody String jsonPayload) {
         try {
