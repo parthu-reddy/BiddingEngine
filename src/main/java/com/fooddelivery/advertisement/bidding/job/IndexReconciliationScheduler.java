@@ -14,6 +14,13 @@ import java.util.stream.Collectors;
 
 @Component
 @Slf4j
+/**
+ * <strong>@replication: per-replica-required</strong> -- CampaignMatcher is an in-memory per-instance index; every replica must refresh its own. Adding a lock here would leave all but one replica serving a stale index.
+ *
+ * <p>Classification recorded 2026-08-27 (Phase 7). Every @Scheduled class in this workspace
+ * carries one of these markers; the BOOT-SCHEDULE-CLASSIFIED check fails on a new one that
+ * does not. Change the marker only after re-reading what the job actually does.
+ */
 public class IndexReconciliationScheduler {
 
     private final CampaignServiceClient campaignServiceClient;
