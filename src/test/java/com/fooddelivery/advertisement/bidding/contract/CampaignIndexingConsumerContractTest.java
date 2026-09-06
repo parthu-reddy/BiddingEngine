@@ -48,6 +48,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
         "com.fooddelivery:budget-pacing-service:+:stubs",
         "com.fooddelivery:wallet-service:+:stubs"
 }, stubsMode = StubRunnerProperties.StubsMode.LOCAL)
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.BEFORE_CLASS)
 @EmbeddedKafka(partitions = 1, topics = {"ad-events"})
 class CampaignIndexingConsumerContractTest {
 
