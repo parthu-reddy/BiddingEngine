@@ -11,7 +11,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.cloud.contract.stubrunner.StubTrigger;
 import org.springframework.cloud.contract.stubrunner.spring.AutoConfigureStubRunner;
-import org.springframework.cloud.contract.stubrunner.spring.StubRunnerProperties;
 import org.springframework.cloud.contract.verifier.messaging.MessageVerifierSender;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -47,7 +46,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
         "com.fooddelivery:campaign-service:+:stubs",
         "com.fooddelivery:budget-pacing-service:+:stubs",
         "com.fooddelivery:wallet-service:+:stubs"
-}, stubsMode = StubRunnerProperties.StubsMode.LOCAL)
+})
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.BEFORE_CLASS)
 @EmbeddedKafka(partitions = 1, topics = {"ad-events"})
 class CampaignIndexingConsumerContractTest {
