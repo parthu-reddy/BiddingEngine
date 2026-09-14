@@ -28,14 +28,17 @@ public class CampaignEventConsumer {
     private final RedisIdempotencyService redisIdempotencyService;
     private final MeterRegistry meterRegistry;
 
-    public CampaignEventConsumer(CampaignMatcher matcher, ObjectMapper objectMapper, RedisIdempotencyService redisIdempotencyService, MeterRegistry meterRegistry) {
+        private final com.fooddelivery.common.event.EventBinder eventBinder;
+
+public CampaignEventConsumer(CampaignMatcher matcher, ObjectMapper objectMapper, RedisIdempotencyService redisIdempotencyService, MeterRegistry meterRegistry, com.fooddelivery.common.event.EventBinder eventBinder) {
+        this.eventBinder = eventBinder;
         this.matcher = matcher;
         this.objectMapper = objectMapper;
         this.redisIdempotencyService = redisIdempotencyService;
         this.meterRegistry = meterRegistry;
     }
 
-    @RetryableTopic(attempts = "5", backoff = @Backoff(delay = 1000, multiplier = 2.0), autoCreateTopics = "true", dltStrategy = DltStrategy.FAIL_ON_ERROR)
+    @RetryableTopic(attempts = "5", backoff = @Backoff(delay = 1000, multiplier = 2.0), autoCreateTopics = "true", dltStrategy = DltStrategy.FAIL_ON_ERROR, exclude = {com.fooddelivery.common.event.EventBindingException.class}, traversingCauses = "true")
     @KafkaListener(topics = KafkaConstants.TOPIC_AD_EVENTS, groupId = KafkaConstants.GROUP_AD_SERVICE + "-campaigneventconsumer")
     public void consumeCampaignEvent(String message, @org.springframework.messaging.handler.annotation.Headers java.util.Map<String, Object> headers) {
         
@@ -55,84 +58,98 @@ public class CampaignEventConsumer {
         }
 
         try {
-            JsonNode root = objectMapper.readTree(message);
-            // CampaignService publishes the saved Campaign FLAT, with the event type carried only
-            // as a Kafka header. The previous guard required an {eventType, payload} envelope and
-            // was therefore never true, so campaigns were never indexed into or removed from the
-            // matcher -- paused and deleted campaigns kept serving.
-            String eventTypeStr = com.fooddelivery.common.util.EventPayloadUtils.resolveEventType(root, headers);
-            JsonNode payload = root;
-            if (eventTypeStr != null && payload != null) {
-                String campaignId = com.fooddelivery.common.util.EventPayloadUtils.campaignId(payload);
-                if (campaignId == null) {
-                    meterRegistry.counter("campaign_event_dropped_total", "reason", "no_campaign_id").increment();
-                    log.warn("Dropping ad-event with no resolvable campaign id: {}", eventTypeStr);
-                    return;
-                }
-                if (EventType.AD_CAMPAIGN_PAUSED.name().equals(eventTypeStr) || EventType.AD_CAMPAIGN_DELETED.name().equals(eventTypeStr) || EventType.AD_CAMPAIGN_COMPLETED.name().equals(eventTypeStr)) {
-                    log.info("Removing campaign {} from matcher due to event {}", campaignId, eventTypeStr);
-                    matcher.removeCampaign(campaignId);
-                } else if (EventType.AD_CAMPAIGN_BUDGET_EXHAUSTED.name().equals(eventTypeStr)) {
-                    log.info("Marking campaign {} as budget exhausted in matcher", campaignId);
-                    matcher.updateBudgetExhausted(campaignId, true);
-                } else if (EventType.AD_CAMPAIGN_PACING_UPDATED.name().equals(eventTypeStr)) {
-                    double pacingMultiplier = payload.has("pacingMultiplier") ? payload.get("pacingMultiplier").asDouble(1.0) : 1.0;
-                    boolean budgetExhausted = payload.has("budgetExhausted") && payload.get("budgetExhausted").asBoolean();
-                    log.info("Updating pacing for campaign {} to {}, budgetExhausted={}", campaignId, pacingMultiplier, budgetExhausted);
-                    matcher.updatePacing(campaignId, pacingMultiplier, budgetExhausted);
-                } else if (EventType.AD_CAMPAIGN_CREATED.name().equals(eventTypeStr) || EventType.AD_CAMPAIGN_RESUMED.name().equals(eventTypeStr) || EventType.AD_CAMPAIGN_UPDATED.name().equals(eventTypeStr)) {
-                    String status = payload.has("status") ? payload.get("status").asText() : "ACTIVE";
-                    
-                    if ("ACTIVE".equals(status)) {
-                        String advertiserId = payload.has("advertiserId") ? payload.get("advertiserId").asText() : null;
-                        com.fooddelivery.common.dto.targeting.TargetingSummary targeting = null;
-                        java.util.List<String> geos = new java.util.ArrayList<>();
-                        
-                        if (payload.has("schemaVersion") && payload.get("schemaVersion").asInt() >= 2 && payload.has("targeting")) {
-                            try {
-                                targeting = objectMapper.treeToValue(payload.get("targeting"), com.fooddelivery.common.dto.targeting.TargetingSummary.class);
-                                if (targeting != null && targeting.getGeoTargeting() != null && targeting.getGeoTargeting().getRegions() != null && !targeting.getGeoTargeting().getRegions().isEmpty()) {
-                                    geos = new java.util.ArrayList<>(targeting.getGeoTargeting().getRegions());
-                                }
-                            } catch (Exception e) {
-                                log.warn("Failed to parse targeting summary for campaign {}", campaignId, e);
-                            }
-                        }
-                        
-                        // removed DEFAULT_GEO fallback so validator passes; matcher handles it internally
-                        
-                        java.math.BigDecimal maxBid = null;
-                        if (payload.has("maxBid")) {
-                            try {
-                                maxBid = new java.math.BigDecimal(payload.get("maxBid").asText());
-                            } catch (Exception ignored) {}
-                        }
-                        
-                        boolean budgetExhausted = false;
-                        if (EventType.AD_CAMPAIGN_UPDATED.name().equals(eventTypeStr)) {
-                            budgetExhausted = matcher.getBudgetExhausted(campaignId);
-                        }
-                        
-                        double pacingMultiplier = -1.0;
-                        
-                        String creativeFormat = payload.has("creativeFormat") && !payload.get("creativeFormat").isNull() ? payload.get("creativeFormat").asText() : null;
-                        String creativeAssetUrl = payload.has("creativeAssetUrl") && !payload.get("creativeAssetUrl").isNull() ? payload.get("creativeAssetUrl").asText() : null;
-                        String creativeVastXml = payload.has("creativeVastXml") && !payload.get("creativeVastXml").isNull() ? payload.get("creativeVastXml").asText() : null;
-                        
-                        log.info("Indexing campaign {} into matcher due to event {}", campaignId, eventTypeStr);
-                        matcher.indexCampaign(campaignId, geos, advertiserId, maxBid, pacingMultiplier, budgetExhausted, targeting, creativeFormat, creativeAssetUrl, creativeVastXml);
-                    } else {
-                        log.info("Removing campaign {} from matcher due to event {} with status {}", campaignId, eventTypeStr, status);
-                        matcher.removeCampaign(campaignId);
-                    }
-                }
+            // ad-events carries the campaign event type in a Kafka header and the body flat --
+            // CampaignServiceImpl and PacingEngineService both write
+            // objectMapper.writeValueAsString(CampaignChangedEvent), so the wire shape IS the class
+            // and binding is a consumer-side change only.
+            String eventTypeStr = com.fooddelivery.common.util.KafkaHeaderUtils.extractEventType(headers, null);
+            if (eventTypeStr == null) {
+                meterRegistry.counter("campaign_event_dropped_total", "reason", "no_event_type").increment();
+                log.warn("Dropping ad-event with no eventType header");
+                return;
             }
-        } catch (Exception e) {
+            final EventType eventType;
+            try {
+                eventType = EventType.valueOf(eventTypeStr);
+            } catch (IllegalArgumentException e) {
+                log.info("Unknown event type {} on ad-events. Ignoring.", eventTypeStr);
+                return;
+            }
+            // Bind only what this consumer acts on. ad-events also carries AD_CREATIVE_* events,
+            // whose payload is a raw AdCreative entity -- a genuinely different shape with `id`
+            // rather than `campaignId`. Binding that to CampaignChangedEvent would yield an object
+            // of nulls; returning first says plainly that those events are not ours.
+            if (!HANDLED_EVENT_TYPES.contains(eventType)) {
+                log.debug("Event {} not handled by the bidding matcher. Ignoring.", eventTypeStr);
+                return;
+            }
+
+            com.fooddelivery.common.event.CampaignChangedEvent event =
+                    eventBinder.bindIf(eventType, eventTypeStr, message,
+                            com.fooddelivery.common.event.CampaignChangedEvent.class)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "bindIf returned empty for " + eventTypeStr
+                                    + " despite an exact event-type match"));
+
+            java.util.UUID campaignUuid = event.getCampaignId();
+            if (campaignUuid == null) {
+                meterRegistry.counter("campaign_event_dropped_total", "reason", "no_campaign_id").increment();
+                log.warn("Dropping ad-event with no resolvable campaign id: {}", eventTypeStr);
+                return;
+            }
+            String campaignId = campaignUuid.toString();
+
+            if (eventType == EventType.AD_CAMPAIGN_PAUSED || eventType == EventType.AD_CAMPAIGN_DELETED
+                    || eventType == EventType.AD_CAMPAIGN_COMPLETED) {
+                log.info("Removing campaign {} from matcher due to event {}", campaignId, eventTypeStr);
+                matcher.removeCampaign(campaignId);
+            } else if (eventType == EventType.AD_CAMPAIGN_BUDGET_EXHAUSTED) {
+                log.info("Marking campaign {} as budget exhausted in matcher", campaignId);
+                matcher.updateBudgetExhausted(campaignId, true);
+            } else if (eventType == EventType.AD_CAMPAIGN_PACING_UPDATED) {
+                double pacingMultiplier = event.getPacingMultiplier() != null ? event.getPacingMultiplier() : 1.0;
+                boolean budgetExhausted = Boolean.TRUE.equals(event.getBudgetExhausted());
+                log.info("Updating pacing for campaign {} to {}, budgetExhausted={}", campaignId, pacingMultiplier, budgetExhausted);
+                matcher.updatePacing(campaignId, pacingMultiplier, budgetExhausted);
+            } else {
+                // AD_CAMPAIGN_CREATED / RESUMED / UPDATED
+                String status = event.getStatus() != null ? event.getStatus() : "ACTIVE";
+                if ("ACTIVE".equals(status)) {
+                    String advertiserId = event.getAdvertiserId() != null
+                            ? event.getAdvertiserId().toString() : null;
+                    // targeting is a TargetingSummary on the event, so the treeToValue round-trip
+                    // and its try/catch are gone -- a malformed one now fails at bind time.
+                    com.fooddelivery.common.dto.targeting.TargetingSummary targeting =
+                            event.getSchemaVersion() != null && event.getSchemaVersion() >= 2
+                                    ? event.getTargeting() : null;
+                    java.util.List<String> geos = new java.util.ArrayList<>();
+                    if (targeting != null && targeting.getGeoTargeting() != null
+                            && targeting.getGeoTargeting().getRegions() != null) {
+                        geos = new java.util.ArrayList<>(targeting.getGeoTargeting().getRegions());
+                    }
+                    boolean budgetExhausted = eventType == EventType.AD_CAMPAIGN_UPDATED
+                            && matcher.getBudgetExhausted(campaignId);
+                    double pacingMultiplier = -1.0;
+                    log.info("Indexing campaign {} into matcher due to event {}", campaignId, eventTypeStr);
+                    matcher.indexCampaign(campaignId, geos, advertiserId, event.getMaxBid(),
+                            pacingMultiplier, budgetExhausted, targeting, event.getCreativeFormat(),
+                            event.getCreativeAssetUrl(), event.getCreativeVastXml());
+                } else {
+                    log.info("Removing campaign {} from matcher due to event {} with status {}", campaignId, eventTypeStr, status);
+                    matcher.removeCampaign(campaignId);
+                }
+            }        } catch (Exception e) {
             redisIdempotencyService.removeKey(idempotencyKeyStr);
             log.error("Failed to process campaign event, propagating for retry", e);
             throw new RuntimeException("Failed to process campaign event", e);
         }
     }
+
+    /** The campaign events the matcher acts on. ad-events also carries AD_CREATIVE_* and others. */
+    private static final java.util.Set<EventType> HANDLED_EVENT_TYPES = java.util.EnumSet.of(
+            EventType.AD_CAMPAIGN_CREATED, EventType.AD_CAMPAIGN_UPDATED, EventType.AD_CAMPAIGN_RESUMED,
+            EventType.AD_CAMPAIGN_PAUSED, EventType.AD_CAMPAIGN_DELETED, EventType.AD_CAMPAIGN_COMPLETED,
+            EventType.AD_CAMPAIGN_BUDGET_EXHAUSTED, EventType.AD_CAMPAIGN_PACING_UPDATED);
 
     @DltHandler
     public void handleDlt(Object message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
