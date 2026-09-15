@@ -137,7 +137,8 @@ public class InternalAdController {
                     impUrl,
                     clickUrl,
                     adm,
-                    pc.data.creativeFormat != null ? pc.data.creativeFormat : "BANNER"
+                    pc.data.creativeFormat != null ? pc.data.creativeFormat : "BANNER",
+                    advertiserId
                 );
             })
             .collect(Collectors.toList());
