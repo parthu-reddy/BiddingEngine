@@ -37,7 +37,8 @@ public class BaseContractTest {
             "http://impression",
             "http://click",
             "http://cdn/sponsored.jpg",
-            "BANNER"
+            "BANNER",
+            "advertiser-1"
         );
 
         when(internalAdController.serveAds(any(AdRequestDTO.class)))
