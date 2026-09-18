@@ -438,3 +438,4 @@ How this service integrates with the broader Food Delivery platform:
 - **CustomerApplication**: `CustomerApplication` calls `BiddingEngine` via FeignClient (`POST /api/v1/ads/serve`) when a user searches for food. The `BiddingEngine` evaluates targeting (geo, time, context) and returns sponsored listings. `CustomerApplication` implements a fallback that returns an empty list on failure, ensuring ad failures never block core food ordering.
 - **ApiGateway**: OpenRTB bidding routes (`/api/v1/ads/**`) are mapped here for external SSPs and ad exchanges.
 - **ConfigService**: Externalizes bid-shading parameters and cache TTLs.
+
