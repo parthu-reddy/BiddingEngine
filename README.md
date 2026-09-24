@@ -439,3 +439,5 @@ How this service integrates with the broader Food Delivery platform:
 - **ApiGateway**: OpenRTB bidding routes (`/api/v1/ads/**`) are mapped here for external SSPs and ad exchanges.
 - **ConfigService**: Externalizes bid-shading parameters and cache TTLs.
 
+
+<!-- dummy data -->
