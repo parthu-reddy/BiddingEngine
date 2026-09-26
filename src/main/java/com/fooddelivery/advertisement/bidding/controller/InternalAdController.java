@@ -97,7 +97,9 @@ public class InternalAdController {
                         UUID.fromString(campaignData.advertiserId),
                         bidPrice,
                         auctionId,
-                        Duration.ofHours(24)
+                        Duration.ofHours(24),
+                        // signed in so the tracker books the spend to the advertiser's day
+                        java.time.ZoneId.of(campaignData.timeZone)
                 );
                 return new PricedCampaign(campaignData, bidPrice, encryptedPrice);
             })

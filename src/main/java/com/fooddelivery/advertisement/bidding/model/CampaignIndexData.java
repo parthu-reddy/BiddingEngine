@@ -10,8 +10,13 @@ public class CampaignIndexData {
     public String creativeFormat;
     public String creativeAssetUrl;
     public String creativeVastXml;
+    /**
+     * The advertiser's IANA zone. Dayparting reads the advertiser's wall clock in it, and it is signed
+     * into the auction token so the tracker books spend to the advertiser's day.
+     */
+    public String timeZone;
     
-    public CampaignIndexData(String campaignId, String advertiserId, java.math.BigDecimal maxBid, double pacingMultiplier, boolean budgetExhausted, com.fooddelivery.common.dto.targeting.TargetingSummary targeting, String creativeFormat, String creativeAssetUrl, String creativeVastXml) {
+    public CampaignIndexData(String campaignId, String advertiserId, java.math.BigDecimal maxBid, double pacingMultiplier, boolean budgetExhausted, com.fooddelivery.common.dto.targeting.TargetingSummary targeting, String creativeFormat, String creativeAssetUrl, String creativeVastXml, String timeZone) {
         this.campaignId = campaignId;
         this.advertiserId = advertiserId;
         this.maxBid = maxBid;
@@ -21,5 +26,6 @@ public class CampaignIndexData {
         this.creativeFormat = creativeFormat;
         this.creativeAssetUrl = creativeAssetUrl;
         this.creativeVastXml = creativeVastXml;
+        this.timeZone = timeZone;
     }
 }

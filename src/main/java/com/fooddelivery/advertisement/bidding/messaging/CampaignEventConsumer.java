@@ -133,7 +133,7 @@ public CampaignEventConsumer(CampaignMatcher matcher, ObjectMapper objectMapper,
                     log.info("Indexing campaign {} into matcher due to event {}", campaignId, eventTypeStr);
                     matcher.indexCampaign(campaignId, geos, advertiserId, event.getMaxBid(),
                             pacingMultiplier, budgetExhausted, targeting, event.getCreativeFormat(),
-                            event.getCreativeAssetUrl(), event.getCreativeVastXml());
+                            event.getCreativeAssetUrl(), event.getCreativeVastXml(), event.getTimeZone());
                 } else {
                     log.info("Removing campaign {} from matcher due to event {} with status {}", campaignId, eventTypeStr, status);
                     matcher.removeCampaign(campaignId);
@@ -152,8 +152,9 @@ public CampaignEventConsumer(CampaignMatcher matcher, ObjectMapper objectMapper,
             EventType.AD_CAMPAIGN_BUDGET_EXHAUSTED, EventType.AD_CAMPAIGN_PACING_UPDATED);
 
     @DltHandler
-    public void handleDlt(Object message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic) {
-        log.error("Campaign event sent to DLT from topic {}: {}", topic, message);
+    public void handleDlt(Object message, @Header(KafkaHeaders.RECEIVED_TOPIC) String topic, @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+                          @Header(KafkaHeaders.OFFSET) long offset) {
+        log.error("Campaign event sent to DLT from topic {}: {} replay={}", topic, message, com.fooddelivery.common.util.KafkaHeaderUtils.deadLetterPosition(topic, partition, offset));
         meterRegistry.counter("kafka_dlt_depth_total", "topic", topic).increment();
     }
 }

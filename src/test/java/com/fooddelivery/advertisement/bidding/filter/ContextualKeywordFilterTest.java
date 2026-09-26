@@ -23,7 +23,7 @@ class ContextualKeywordFilterTest {
     }
 
     private CampaignIndexData createCampaignData(TargetingSummary summary) {
-        return new CampaignIndexData("camp1", "adv1", BigDecimal.ONE, 1.0, false, summary, "BANNER", "http://asset", null);
+        return new CampaignIndexData("camp1", "adv1", BigDecimal.ONE, 1.0, false, summary, "BANNER", "http://asset", null, "Asia/Kolkata");
     }
 
     @Test

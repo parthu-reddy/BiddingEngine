@@ -120,7 +120,9 @@ public class BiddingService {
                 UUID.fromString(advertiserId),
                 bidPrice,
                 UUID.fromString(bid.id),
-                Duration.ofHours(24)
+                Duration.ofHours(24),
+                // signed in so the tracker books the spend to the advertiser's day
+                java.time.ZoneId.of(selectedCampaignData.timeZone)
         );
         String impUrl = String.format(trackingUrlConstants.impressionTrackingUrlTemplate, selectedCampaign, advertiserId, com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE);
         bid.nurl = impUrl.contains("wp=" + com.fooddelivery.common.constants.AdMacroConstants.MACRO_AUCTION_PRICE) ? 

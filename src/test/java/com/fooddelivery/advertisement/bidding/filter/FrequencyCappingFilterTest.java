@@ -41,7 +41,7 @@ public class FrequencyCappingFilterTest {
         request.user = new User();
         request.user.id = "device123";
 
-        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null);
+        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null, "Asia/Kolkata");
 
         assertTrue(filter.evaluate(request, campaign));
     }
@@ -55,7 +55,7 @@ public class FrequencyCappingFilterTest {
         request.user = new User();
         request.user.id = "device123";
 
-        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null);
+        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null, "Asia/Kolkata");
 
         assertFalse(filter.evaluate(request, campaign));
     }
@@ -69,7 +69,7 @@ public class FrequencyCappingFilterTest {
         request.user = new User();
         request.user.id = "device123";
 
-        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null);
+        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null, "Asia/Kolkata");
 
         assertFalse(filter.evaluate(request, campaign));
     }
@@ -77,7 +77,7 @@ public class FrequencyCappingFilterTest {
     @Test
     void testEvaluate_NoUserIdentifier_ReturnsTrue() {
         BidRequest request = new BidRequest(); // no user
-        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null);
+        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null, "Asia/Kolkata");
 
         assertTrue(filter.evaluate(request, campaign));
     }
@@ -91,7 +91,7 @@ public class FrequencyCappingFilterTest {
         request.user = new User();
         request.user.id = "device123";
 
-        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null);
+        CampaignIndexData campaign = new CampaignIndexData("camp456", null, null, 1.0, false, null, null, null, null, "Asia/Kolkata");
 
         assertTrue(filter.evaluate(request, campaign));
     }

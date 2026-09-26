@@ -77,7 +77,7 @@ public class IndexReconciliationScheduler {
                 double pacing = campaign.pacingMultiplier != null ? campaign.pacingMultiplier : -1.0;
                 campaignMatcher.indexCampaign(campaign.id,
                         java.util.List.of(com.fooddelivery.advertisement.bidding.constants.BiddingConstants.DEFAULT_GEO),
-                        campaign.advertiserId, campaign.maxBid, pacing, false, null, null, null, null);
+                        campaign.advertiserId, campaign.maxBid, pacing, false, null, null, null, null, campaign.timeZone);
                 addedCount++;
                 meterRegistry.counter("bidding_index_reconciled_total", "action", "added").increment();
             }

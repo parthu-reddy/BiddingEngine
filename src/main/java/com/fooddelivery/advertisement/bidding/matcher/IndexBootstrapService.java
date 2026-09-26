@@ -42,7 +42,7 @@ public class IndexBootstrapService {
                             && !campaign.targeting.getGeoTargeting().getRegions().isEmpty()) {
                             geos = new java.util.ArrayList<>(campaign.targeting.getGeoTargeting().getRegions());
                         }
-                        campaignMatcher.indexCampaign(campaign.id, geos, campaign.advertiserId, campaign.maxBid, pacing, false, campaign.targeting, null, null, null);
+                        campaignMatcher.indexCampaign(campaign.id, geos, campaign.advertiserId, campaign.maxBid, pacing, false, campaign.targeting, null, null, null, campaign.timeZone);
                         count++;
                     }
                     healthIndicator.setBootstrapped(true);

@@ -42,7 +42,7 @@ public class CampaignMatcher {
     private int sequenceGenerator = 1;
     private final java.util.Queue<Integer> freeList = new java.util.LinkedList<>();
 
-    public void indexCampaign(String campaignId, List<String> geos, String advertiserId, java.math.BigDecimal maxBid, double pacingMultiplier, boolean budgetExhausted, com.fooddelivery.common.dto.targeting.TargetingSummary targeting, String creativeFormat, String creativeAssetUrl, String creativeVastXml) {
+    public void indexCampaign(String campaignId, List<String> geos, String advertiserId, java.math.BigDecimal maxBid, double pacingMultiplier, boolean budgetExhausted, com.fooddelivery.common.dto.targeting.TargetingSummary targeting, String creativeFormat, String creativeAssetUrl, String creativeVastXml, String timeZone) {
         writeLock.lock();
         try {
             IndexSnapshot current = snapshot.get();
@@ -84,8 +84,9 @@ public class CampaignMatcher {
             String effCreativeFormat = creativeFormat != null ? creativeFormat : (oldData != null ? oldData.creativeFormat : null);
             String effCreativeAssetUrl = creativeAssetUrl != null ? creativeAssetUrl : (oldData != null ? oldData.creativeAssetUrl : null);
             String effCreativeVastXml = creativeVastXml != null ? creativeVastXml : (oldData != null ? oldData.creativeVastXml : null);
+            String effTimeZone = timeZone != null ? timeZone : (oldData != null ? oldData.timeZone : null);
             
-            cData.put(campaignId, new CampaignIndexData(campaignId, effAdvertiserId, effMaxBid, effPacing, budgetExhausted, effTargeting, effCreativeFormat, effCreativeAssetUrl, effCreativeVastXml));
+            cData.put(campaignId, new CampaignIndexData(campaignId, effAdvertiserId, effMaxBid, effPacing, budgetExhausted, effTargeting, effCreativeFormat, effCreativeAssetUrl, effCreativeVastXml, effTimeZone));
 
             snapshot.set(new IndexSnapshot(cToI, iToC, cData, gIndex));
         } finally {
@@ -100,7 +101,7 @@ public class CampaignMatcher {
             CampaignIndexData oldData = current.campaignDataMap.get(campaignId);
             if (oldData != null) {
                 Map<String, CampaignIndexData> cData = new HashMap<>(current.campaignDataMap);
-                cData.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, oldData.pacingMultiplier, exhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+                cData.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, oldData.pacingMultiplier, exhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml, oldData.timeZone));
                 snapshot.set(new IndexSnapshot(current.campaignToIdMap, current.idToCampaignMap, cData, current.geoIndex));
             }
         } finally {
@@ -115,7 +116,7 @@ public class CampaignMatcher {
             CampaignIndexData oldData = current.campaignDataMap.get(campaignId);
             if (oldData != null) {
                 Map<String, CampaignIndexData> cData = new HashMap<>(current.campaignDataMap);
-                cData.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, pacing, budgetExhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml));
+                cData.put(campaignId, new CampaignIndexData(campaignId, oldData.advertiserId, oldData.maxBid, pacing, budgetExhausted, oldData.targeting, oldData.creativeFormat, oldData.creativeAssetUrl, oldData.creativeVastXml, oldData.timeZone));
                 snapshot.set(new IndexSnapshot(current.campaignToIdMap, current.idToCampaignMap, cData, current.geoIndex));
             }
         } finally {

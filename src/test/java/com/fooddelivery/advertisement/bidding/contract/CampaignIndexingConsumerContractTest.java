@@ -92,7 +92,8 @@ class CampaignIndexingConsumerContractTest {
     void indexesTheCampaignOnCreated() {
         stubTrigger.trigger("ad_events");
         await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                verify(matcher).indexCampaign(anyString(), any(), anyString(), any(), anyDouble(), anyBoolean(), any(), any(), any(), any()));
+                verify(matcher).indexCampaign(anyString(), any(), anyString(), any(), anyDouble(), anyBoolean(), any(), any(), any(), any(),
+                        org.mockito.ArgumentMatchers.eq("Asia/Kolkata")));
     }
 
     @Test
